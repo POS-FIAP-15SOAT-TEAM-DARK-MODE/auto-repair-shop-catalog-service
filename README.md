@@ -21,9 +21,21 @@ Internal (header `X-Internal-Token`, never routed by the gateway):
 
 | Method | Path | Result |
 |---|---|---|
-| GET | `/internal/works/{id}` | `200` `{id,name,unit_price,active}` · `404` |
-| POST | `/internal/reservations` | `201` · `409` insufficient stock or already reserved · `404` supply · `422` quantity ≤ 0 |
+| GET | `/internal/works/{id}` | `200` `{id,name,description,unit_price,active}` · `404` |
+| POST | `/internal/reservations` | `201` `{reservation_id,supply_id,name,description,unit_price,version}` · `409` insufficient stock or already reserved · `404` supply · `422` quantity ≤ 0 |
 | DELETE | `/internal/reservations/{id}` | `204` (idempotent) · `404` unknown id |
+
+Response examples (same as `docs/fase4/contracts/internal-rest.md`):
+
+```json
+GET /internal/works/9b2d6a0e-3c0f-4a0b-8d57-2a5f6a1c9e11
+{"id":"9b2d6a0e-3c0f-4a0b-8d57-2a5f6a1c9e11","name":"Troca de óleo","description":"Troca de óleo do motor com filtro incluído","unit_price":"150.00","active":true}
+
+POST /internal/reservations  {"service_order_id":"01JD8Z4R3Q8M2V7K5N9XWABCDE","supply_id":"…","quantity":2}
+201 {"reservation_id":"…","supply_id":"…","name":"Filtro","description":"Filtro de óleo","unit_price":"35.50","version":3}
+```
+
+`version` is the supply's `version` after the stock decrement.
 
 Operational: `GET /ping`, `GET /metrics`, `GET /swagger/index.html`.
 
