@@ -17,6 +17,12 @@ Public (JWT, role-based):
 | GET | `/v1/supplies` | ATTENDANT, MECHANIC, ADMIN |
 | POST / PUT / DELETE | `/v1/supplies[/:id]` | ATTENDANT, MECHANIC, ADMIN |
 
+`PUT /v1/supplies/:id` requires `version` in the body: the version the client read
+(`GET /v1/supplies` returns it). The update applies only if the stored version is still
+that one, so a stock reservation made in between is never overwritten. The response
+carries the new version. A stale version returns `409` with
+`supply was modified by someone else; reload and try again`; a missing or zero version returns `400`.
+
 Internal (header `X-Internal-Token`, never routed by the gateway):
 
 | Method | Path | Result |

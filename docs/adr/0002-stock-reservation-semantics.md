@@ -28,6 +28,10 @@ on its own. The catalog is the only owner of supply stock.
 - Stock is restored at most once per reservation, guaranteed by the status
   transition (`WHERE status = 'RESERVED'`), not only by deduplication.
 
+- Supply updates (`PUT /v1/supplies/:id`) use an optimistic lock: the caller sends the
+  `version` it read, and the write is `WHERE id = $1 AND version = $6`. A stale version
+  returns `409`, so a stock value read before a reservation cannot overwrite it.
+
 ## Consequences
 
 - Concurrent reservations of the same supply serialize on the conditional update.

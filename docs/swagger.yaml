@@ -216,7 +216,9 @@ paths:
   /v1/supplies/{id}:
     put:
       summary: Update a supply
-      description: Updates an existing supply by ID.
+      description: Updates an existing supply by ID with an optimistic lock. The body must include the `version` the client
+        read; if the supply changed in the meantime (for example by a stock reservation) the request is rejected with 409
+        and nothing is written.
       tags:
       - Supply
       security:
@@ -235,16 +237,16 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SupplyRequest'
+              $ref: '#/components/schemas/SupplyUpdateRequest'
       responses:
         '200':
-          description: Supply updated successfully
+          description: Supply updated successfully; `version` is the new version
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SupplyResponse'
         '400':
-          description: Invalid request body or validation failed
+          description: Invalid request body, validation failed, or `version` missing or below 1
           content:
             application/json:
               schema:
@@ -270,6 +272,15 @@ paths:
               example:
                 code: 500
                 error: Internal Server Error
+        '409':
+          description: 'Version conflict: the supply was modified by someone else. Reload the supply and try again.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: 409
+                error: supply was modified by someone else; reload and try again
     delete:
       summary: Delete a supply
       description: Removes a supply by ID. Returns 204 on success.
@@ -997,3 +1008,18 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ServiceOrderSupplyResponse'
+    SupplyUpdateRequest:
+      allOf:
+      - $ref: '#/components/schemas/SupplyRequest'
+      - type: object
+        required:
+        - version
+        properties:
+          version:
+            type: integer
+            minimum: 1
+            example: 3
+            description: Version of the supply the client read (GET /v1/supplies returns it). The update applies only if it
+              is still current; otherwise the response is 409.
+      description: 'Optimistic lock: the update succeeds only when version matches the stored version. The response carries
+        the new version (version + 1).'
