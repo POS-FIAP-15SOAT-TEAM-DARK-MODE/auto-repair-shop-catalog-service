@@ -18,6 +18,7 @@ func TestInternalService_FindByID(t *testing.T) {
 	w, err := domain.NewWork("Troca de óleo", "Troca de óleo do motor", "150.00", domain.ACTIVE)
 	require.NoError(t, err)
 	w.ID = "9b2d6a0e-3c0f-4a0b-8d57-2a5f6a1c9e11"
+	w.Description = "Troca de óleo do motor com filtro incluído"
 	require.NoError(t, repo.Save(context.Background(), w))
 	svc := NewInternalService(uow.NewInMemoryUoW(), repo)
 
@@ -25,6 +26,7 @@ func TestInternalService_FindByID(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, w.ID, got.ID)
+	assert.Equal(t, w.Description, got.Description)
 	assert.Equal(t, "150.00", got.UnitPrice)
 	assert.True(t, got.Active)
 }
