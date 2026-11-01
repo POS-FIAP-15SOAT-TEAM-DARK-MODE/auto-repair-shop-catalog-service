@@ -1,13 +1,13 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: auto-repair-shop
+  name: catalog-service
   labels:
-    app: auto-repair-shop
+    app: catalog-service
 spec:
   selector:
     matchLabels:
-      app: auto-repair-shop
+      app: catalog-service
   endpoints:
     - port: http
       path: /metrics

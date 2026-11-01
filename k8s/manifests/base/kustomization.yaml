@@ -3,10 +3,11 @@ kind: Kustomization
 
 namespace: auto-repair-shop
 
-# The app's Kubernetes workload only. Networking is owned by Terraform in
+# The catalog service workload only. Networking is owned by Terraform in
 # auto-repair-shop-infra-k8s; the database (RDS) by auto-repair-shop-infra-db.
+# All objects carry the catalog-service prefix: every service shares the
+# auto-repair-shop namespace.
 resources:
-  - namespace.yaml
   - configmap.yaml
   - rbac.yaml
   - deployment.yaml
@@ -15,5 +16,5 @@ resources:
   - migrate-job.yaml
 
 images:
-  - name: auto-repair-shop
+  - name: auto-repair-shop-catalog-service
     newTag: dev
