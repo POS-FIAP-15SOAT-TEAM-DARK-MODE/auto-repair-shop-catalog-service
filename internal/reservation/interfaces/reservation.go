@@ -40,7 +40,8 @@ type ReservationRepository interface {
 // StockRepository reads and moves supply stock inside the unit of work.
 type StockRepository interface {
 	FindSupply(ctx context.Context, id string) (domain.SupplyInfo, error)
-	// Decrement removes qty units; returns ErrInsufficientStock when stock is not enough.
-	Decrement(ctx context.Context, supplyID string, qty int) error
+	// Decrement removes qty units and returns the supply version after the change.
+	// Returns ErrInsufficientStock when stock is not enough.
+	Decrement(ctx context.Context, supplyID string, qty int) (int, error)
 	Increment(ctx context.Context, supplyID string, qty int) error
 }

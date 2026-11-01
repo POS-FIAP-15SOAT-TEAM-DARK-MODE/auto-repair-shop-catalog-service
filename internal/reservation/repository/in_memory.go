@@ -25,10 +25,10 @@ func NewInMemory() *InMemory {
 }
 
 // AddSupply seeds a supply with the given stock.
-func (m *InMemory) AddSupply(id, name string, unitPrice decimal.Decimal, stock int) {
+func (m *InMemory) AddSupply(id, name, description string, unitPrice decimal.Decimal, stock int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.supplies[id] = domain.SupplyInfo{ID: id, Name: name, UnitPrice: unitPrice, StockQuantity: stock}
+	m.supplies[id] = domain.SupplyInfo{ID: id, Name: name, Description: description, UnitPrice: unitPrice, StockQuantity: stock, Version: 1}
 }
 
 func (m *InMemory) Stock(id string) int {
@@ -103,16 +103,17 @@ func (m *InMemory) FindSupply(_ context.Context, id string) (domain.SupplyInfo, 
 	return s, nil
 }
 
-func (m *InMemory) Decrement(_ context.Context, supplyID string, qty int) error {
+func (m *InMemory) Decrement(_ context.Context, supplyID string, qty int) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s, ok := m.supplies[supplyID]
 	if !ok || s.StockQuantity < qty {
-		return domain.ErrInsufficientStock
+		return 0, domain.ErrInsufficientStock
 	}
 	s.StockQuantity -= qty
+	s.Version++
 	m.supplies[supplyID] = s
-	return nil
+	return s.Version, nil
 }
 
 func (m *InMemory) Increment(_ context.Context, supplyID string, qty int) error {

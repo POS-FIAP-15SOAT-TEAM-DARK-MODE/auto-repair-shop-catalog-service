@@ -29,6 +29,8 @@ type Reservation struct {
 type SupplyInfo struct {
 	ID            string
 	Name          string
+	Description   string
+	Version       int
 	UnitPrice     decimal.Decimal
 	StockQuantity int
 }

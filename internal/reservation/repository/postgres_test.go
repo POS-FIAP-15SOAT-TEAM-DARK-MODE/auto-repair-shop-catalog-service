@@ -186,11 +186,11 @@ func TestPostgresStock_FindSupply(t *testing.T) {
 	repo := NewPostgresStock()
 
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT id, name, unit_price, stock_quantity FROM supply").WithArgs("s1").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "unit_price", "stock"}).AddRow("s1", "Filtro", "35.50", 4))
+	mock.ExpectQuery("SELECT id, name, COALESCE").WithArgs("s1").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "description", "unit_price", "stock", "version"}).AddRow("s1", "Filtro", "Filtro de óleo", "35.50", 4, 7))
 	mock.ExpectCommit()
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT id, name, unit_price, stock_quantity FROM supply").WithArgs("nope").WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT id, name, COALESCE").WithArgs("nope").WillReturnError(sql.ErrNoRows)
 	mock.ExpectRollback()
 
 	err := uow.NewTransactionalUoW(db).Execute(context.Background(), func(ctx context.Context) error {
@@ -198,6 +198,8 @@ func TestPostgresStock_FindSupply(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "35.5", info.UnitPrice.String())
 		assert.Equal(t, 4, info.StockQuantity)
+		assert.Equal(t, "Filtro de óleo", info.Description)
+		assert.Equal(t, 7, info.Version)
 		return nil
 	})
 	require.NoError(t, err)
@@ -212,7 +214,7 @@ func TestPostgresStock_FindSupply(t *testing.T) {
 func TestPostgresStock_FindSupply_BadPrice(t *testing.T) {
 	db, mock := newMock(t)
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT id, name, unit_price").WillReturnRows(sqlmock.NewRows([]string{"id", "name", "p", "s"}).AddRow("s", "n", "abc", 1))
+	mock.ExpectQuery("SELECT id, name, COALESCE").WillReturnRows(sqlmock.NewRows([]string{"id", "name", "d", "p", "s", "v"}).AddRow("s", "n", "d", "abc", 1, 1))
 	mock.ExpectRollback()
 
 	err := uow.NewTransactionalUoW(db).Execute(context.Background(), func(ctx context.Context) error {
@@ -227,14 +229,19 @@ func TestPostgresStock_DecrementAndIncrement(t *testing.T) {
 	repo := NewPostgresStock()
 
 	mock.ExpectBegin()
-	mock.ExpectExec("UPDATE supply SET stock_quantity = stock_quantity -").WithArgs(2, "s1").WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec("UPDATE supply SET stock_quantity = stock_quantity -").WithArgs(9, "s1").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery("UPDATE supply SET stock_quantity = stock_quantity -.*RETURNING version").WithArgs(2, "s1").
+		WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow(5))
+	mock.ExpectQuery("UPDATE supply SET stock_quantity = stock_quantity -.*RETURNING version").WithArgs(9, "s1").
+		WillReturnRows(sqlmock.NewRows([]string{"version"}))
 	mock.ExpectExec("UPDATE supply SET stock_quantity = stock_quantity \\+").WithArgs(2, "s1").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
 	err := uow.NewTransactionalUoW(db).Execute(context.Background(), func(ctx context.Context) error {
-		require.NoError(t, repo.Decrement(ctx, "s1", 2))
-		assert.ErrorIs(t, repo.Decrement(ctx, "s1", 9), domain.ErrInsufficientStock)
+		version, err := repo.Decrement(ctx, "s1", 2)
+		require.NoError(t, err)
+		assert.Equal(t, 5, version)
+		_, err = repo.Decrement(ctx, "s1", 9)
+		assert.ErrorIs(t, err, domain.ErrInsufficientStock)
 		return repo.Increment(ctx, "s1", 2)
 	})
 	require.NoError(t, err)
@@ -244,12 +251,13 @@ func TestPostgresStock_DecrementAndIncrement(t *testing.T) {
 func TestPostgresStock_ExecErrors(t *testing.T) {
 	db, mock := newMock(t)
 	mock.ExpectBegin()
-	mock.ExpectExec("UPDATE supply").WillReturnError(errors.New("boom"))
+	mock.ExpectQuery("UPDATE supply").WillReturnError(errors.New("boom"))
 	mock.ExpectExec("UPDATE supply").WillReturnError(errors.New("boom"))
 	mock.ExpectRollback()
 
 	err := uow.NewTransactionalUoW(db).Execute(context.Background(), func(ctx context.Context) error {
-		assert.Error(t, NewPostgresStock().Decrement(ctx, "s", 1))
+		_, err := NewPostgresStock().Decrement(ctx, "s", 1)
+		assert.Error(t, err)
 		return NewPostgresStock().Increment(ctx, "s", 1)
 	})
 	assert.Error(t, err)

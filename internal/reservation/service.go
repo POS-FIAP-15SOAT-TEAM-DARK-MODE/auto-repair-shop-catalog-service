@@ -28,7 +28,9 @@ func (s *reservationService) Reserve(ctx context.Context, req adapters.ReserveRe
 	}
 
 	var supply domain.SupplyInfo
+	var version int
 	if err := s.uow.Execute(ctx, func(txCtx context.Context) error {
+		var err error
 		supply, err = s.stock.FindSupply(txCtx, res.SupplyID)
 		if err != nil {
 			return err
@@ -39,7 +41,8 @@ func (s *reservationService) Reserve(ctx context.Context, req adapters.ReserveRe
 		if err := s.reservations.Reserve(txCtx, res); err != nil {
 			return err
 		}
-		return s.stock.Decrement(txCtx, res.SupplyID, res.Quantity)
+		version, err = s.stock.Decrement(txCtx, res.SupplyID, res.Quantity)
+		return err
 	}); err != nil {
 		return adapters.ReserveResponse{}, err
 	}
@@ -48,7 +51,9 @@ func (s *reservationService) Reserve(ctx context.Context, req adapters.ReserveRe
 		ReservationID: res.ID,
 		SupplyID:      supply.ID,
 		Name:          supply.Name,
+		Description:   supply.Description,
 		UnitPrice:     supply.UnitPrice.StringFixed(2),
+		Version:       version,
 	}, nil
 }
 

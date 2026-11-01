@@ -12,5 +12,7 @@ type ReserveResponse struct {
 	ReservationID string `json:"reservation_id"`
 	SupplyID      string `json:"supply_id"`
 	Name          string `json:"name"`
+	Description   string `json:"description"`
 	UnitPrice     string `json:"unit_price"`
+	Version       int    `json:"version"`
 }

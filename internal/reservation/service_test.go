@@ -23,7 +23,7 @@ const (
 func newTestService(t *testing.T, stock int) (*reservationService, *repository.InMemory) {
 	t.Helper()
 	repo := repository.NewInMemory()
-	repo.AddSupply(supplyID, "Filtro de Óleo", decimal.RequireFromString("35.5"), stock)
+	repo.AddSupply(supplyID, "Filtro de Óleo", "Filtro de óleo para motores", decimal.RequireFromString("35.5"), stock)
 	return NewService(uow.NewInMemoryUoW(), repo, repo), repo
 }
 
@@ -36,7 +36,9 @@ func TestReserve_DecrementsStockAndReturnsSnapshot(t *testing.T) {
 	assert.NotEmpty(t, resp.ReservationID)
 	assert.Equal(t, supplyID, resp.SupplyID)
 	assert.Equal(t, "Filtro de Óleo", resp.Name)
+	assert.Equal(t, "Filtro de óleo para motores", resp.Description)
 	assert.Equal(t, "35.50", resp.UnitPrice)
+	assert.Equal(t, 2, resp.Version, "version is supply.version after the decrement (1 -> 2)")
 	assert.Equal(t, 3, repo.Stock(supplyID))
 }
 
@@ -145,7 +147,7 @@ func (failingStock) Increment(context.Context, string, int) error { return error
 
 func TestReleaseAllByServiceOrder_PropagatesStockError(t *testing.T) {
 	repo := repository.NewInMemory()
-	repo.AddSupply(supplyID, "x", decimal.NewFromInt(1), 5)
+	repo.AddSupply(supplyID, "x", "descricao", decimal.NewFromInt(1), 5)
 	svc := NewService(uow.NewInMemoryUoW(), repo, failingStock{repo})
 	ctx := context.Background()
 	_, err := svc.Reserve(ctx, adapters.ReserveRequest{ServiceOrderID: soID, SupplyID: supplyID, Quantity: 1})

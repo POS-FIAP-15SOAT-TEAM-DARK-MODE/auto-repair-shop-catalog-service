@@ -37,10 +37,11 @@ const (
 		WHERE service_order_id = $1 AND status = 'RESERVED'
 		RETURNING id, service_order_id, supply_id, quantity, status
 	`
-	findSupplyQuery = `SELECT id, name, unit_price, stock_quantity FROM supply WHERE id = $1`
+	findSupplyQuery = `SELECT id, name, COALESCE(description, ''), unit_price, stock_quantity, version FROM supply WHERE id = $1`
 	decrementQuery  = `
 		UPDATE supply SET stock_quantity = stock_quantity - $1, version = version + 1
 		WHERE id = $2 AND stock_quantity >= $1
+		RETURNING version
 	`
 	incrementQuery = `
 		UPDATE supply SET stock_quantity = stock_quantity + $1, version = version + 1
@@ -164,7 +165,7 @@ func (r *postgresStockRepository) FindSupply(ctx context.Context, id string) (do
 
 	var info domain.SupplyInfo
 	var price string
-	err = db.QueryRowContext(ctx, findSupplyQuery, id).Scan(&info.ID, &info.Name, &price, &info.StockQuantity)
+	err = db.QueryRowContext(ctx, findSupplyQuery, id).Scan(&info.ID, &info.Name, &info.Description, &price, &info.StockQuantity, &info.Version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.SupplyInfo{}, supplyDomain.ErrSupplyNotFound
 	}
@@ -179,22 +180,21 @@ func (r *postgresStockRepository) FindSupply(ctx context.Context, id string) (do
 	return info, nil
 }
 
-func (r *postgresStockRepository) Decrement(ctx context.Context, supplyID string, qty int) error {
+func (r *postgresStockRepository) Decrement(ctx context.Context, supplyID string, qty int) (int, error) {
 	db, err := conn(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	res, err := db.ExecContext(ctx, decrementQuery, qty, supplyID)
+	var version int
+	err = db.QueryRowContext(ctx, decrementQuery, qty, supplyID).Scan(&version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, domain.ErrInsufficientStock
+	}
 	if err != nil {
-		return postgres.Error(ctx, err)
+		return 0, postgres.Error(ctx, err)
 	}
-	if n, err := res.RowsAffected(); err != nil {
-		return postgres.Error(ctx, err)
-	} else if n == 0 {
-		return domain.ErrInsufficientStock
-	}
-	return nil
+	return version, nil
 }
 
 func (r *postgresStockRepository) Increment(ctx context.Context, supplyID string, qty int) error {
