@@ -10,6 +10,11 @@ import (
 //go:generate go run github.com/vektra/mockery/v2@latest --name=SupplyRepository --with-expecter
 type SupplyRepository interface {
 	Save(context.Context, *domain.Supply) error
+	// UpdateWithVersion updates the supply only if its stored version equals
+	// expectedVersion, and sets supply.Version to the stored version after the update.
+	// Returns ErrSupplyNotFound when the id does not exist and ErrSupplyVersionConflict
+	// when it exists with another version.
+	UpdateWithVersion(ctx context.Context, supply *domain.Supply, expectedVersion int) error
 	Delete(context.Context, string) error
 	Search(context.Context, adapters.ListSuppliesParams) ([]domain.Supply, error)
 	Count(context.Context, adapters.ListSuppliesParams) (int64, error)

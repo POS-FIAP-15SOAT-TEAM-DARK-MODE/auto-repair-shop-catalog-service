@@ -14,4 +14,6 @@ var (
 	ErrInvalidSupplyId            = errors.New("invalid supply id")
 	ErrSupplyNotFound             = errors.New("supply not found")
 	ErrSupplyOutOfStock           = errors.New("supply out of stock or requested quantity exceeds available stock")
+	ErrSupplyVersionRequired      = errors.New("supply version is required and must be at least 1")
+	ErrSupplyVersionConflict      = errors.New("supply was modified by someone else; reload and try again")
 )

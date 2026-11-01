@@ -24,6 +24,19 @@ func (i *inMemory) Save(_ context.Context, supply *domain.Supply) error {
 	return nil
 }
 
+func (i *inMemory) UpdateWithVersion(_ context.Context, supply *domain.Supply, expectedVersion int) error {
+	current, ok := i.data[supply.ID]
+	if !ok {
+		return domain.ErrSupplyNotFound
+	}
+	if current.Version != expectedVersion {
+		return domain.ErrSupplyVersionConflict
+	}
+	supply.Version = current.Version + 1
+	i.data[supply.ID] = *supply
+	return nil
+}
+
 func (i *inMemory) Delete(_ context.Context, id string) error {
 	delete(i.data, id)
 	return nil

@@ -12,6 +12,16 @@ type CreateSupply struct {
 	StockQuantity int             `json:"stockQuantity" binding:"required"`
 }
 
+// UpdateSupply is the body of PUT /v1/supplies/:id. Version is the version the client
+// read (GET returns it); the update applies only if the stored version still matches.
+type UpdateSupply struct {
+	Name          string          `json:"name" binding:"required"`
+	Description   string          `json:"description" binding:"required"`
+	UnitPrice     decimal.Decimal `json:"unitPrice" binding:"required"`
+	StockQuantity int             `json:"stockQuantity" binding:"required"`
+	Version       int             `json:"version" binding:"required"`
+}
+
 type SupplyResponse struct {
 	ID            string          `json:"id"`
 	Name          string          `json:"name"`

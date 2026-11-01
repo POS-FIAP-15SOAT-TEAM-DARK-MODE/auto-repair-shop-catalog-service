@@ -15,6 +15,7 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // -------------------------
@@ -344,43 +345,113 @@ func TestService_List_EmptyResult(t *testing.T) {
 // Update
 // -------------------------
 
-func TestService_Update_Success(t *testing.T) {
-	ctx := context.Background()
-	exec := uowMocks.NewExecutor(t)
-	repo := mocks.NewSupplyRepository(t)
-	validId := "supply-id"
-
-	s := adapters.CreateSupply{
+func updateInput(version int) adapters.UpdateSupply {
+	return adapters.UpdateSupply{
 		Name:          "Brake Pad",
 		Description:   "High performance brake pad",
 		UnitPrice:     decimal.NewFromFloat(49.99),
 		StockQuantity: 10,
+		Version:       version,
 	}
+}
+
+// storeWithVersion simulates the repository: the update succeeds for the expected
+// version and bumps it, otherwise it returns the given error.
+func storeWithVersion(stored int, failure error) func(context.Context, *domain.Supply, int) error {
+	return func(_ context.Context, supply *domain.Supply, expected int) error {
+		if failure != nil {
+			return failure
+		}
+		if expected != stored {
+			return domain.ErrSupplyVersionConflict
+		}
+		supply.Version = stored + 1
+		return nil
+	}
+}
+
+func TestService_Update_Success_BumpsVersion(t *testing.T) {
+	ctx := context.Background()
+	exec := uowMocks.NewExecutor(t)
+	repo := mocks.NewSupplyRepository(t)
+	validId := "supply-id"
+	in := updateInput(3)
 
 	exec.EXPECT().
 		Execute(mock.Anything, mock.Anything).
 		RunAndReturn(func(ctx context.Context, steps ...uow.Step) error {
 			return steps[0](ctx)
 		})
-
-	repo.EXPECT().Search(mock.Anything, mock.Anything).Return([]domain.Supply{
-		*domain.NewSupply(validId, s.Name, s.Description, s.UnitPrice, s.StockQuantity),
-	}, nil)
-
 	repo.EXPECT().
-		Save(mock.Anything, mock.AnythingOfType("*domain.Supply")).
-		Return(nil)
+		UpdateWithVersion(mock.Anything, mock.AnythingOfType("*domain.Supply"), 3).
+		RunAndReturn(storeWithVersion(3, nil))
 
 	appService := supply.NewService(exec, repo, id.NewNoopIDGenerator(validId))
 
-	res, err := appService.Update(ctx, validId, s)
-	assert.NoError(t, err)
-	assert.Equal(t, s.Name, res.Name)
-	assert.Equal(t, s.Description, res.Description)
-	assert.Equal(t, s.UnitPrice, res.UnitPrice)
-	assert.Equal(t, s.StockQuantity, res.StockQuantity)
+	res, err := appService.Update(ctx, validId, in)
+	require.NoError(t, err)
 	assert.Equal(t, validId, res.ID)
-	assert.Equal(t, 2, res.Version)
+	assert.Equal(t, in.Name, res.Name)
+	assert.Equal(t, in.StockQuantity, res.StockQuantity)
+	assert.Equal(t, 4, res.Version, "new version is the version read plus one")
+}
+
+func TestService_Update_StaleVersionConflicts(t *testing.T) {
+	ctx := context.Background()
+	exec := uowMocks.NewExecutor(t)
+	repo := mocks.NewSupplyRepository(t)
+	exec.EXPECT().
+		Execute(mock.Anything, mock.Anything).
+		RunAndReturn(func(ctx context.Context, steps ...uow.Step) error {
+			return steps[0](ctx)
+		})
+	repo.EXPECT().
+		UpdateWithVersion(mock.Anything, mock.Anything, 2).
+		RunAndReturn(storeWithVersion(5, nil))
+
+	appService := supply.NewService(exec, repo, id.NewNoopIDGenerator("supply-id"))
+
+	_, err := appService.Update(ctx, "supply-id", updateInput(2))
+	assert.ErrorIs(t, err, domain.ErrSupplyVersionConflict)
+}
+
+func TestService_Update_NotFound(t *testing.T) {
+	ctx := context.Background()
+	exec := uowMocks.NewExecutor(t)
+	repo := mocks.NewSupplyRepository(t)
+	exec.EXPECT().
+		Execute(mock.Anything, mock.Anything).
+		RunAndReturn(func(ctx context.Context, steps ...uow.Step) error {
+			return steps[0](ctx)
+		})
+	repo.EXPECT().
+		UpdateWithVersion(mock.Anything, mock.Anything, 1).
+		Return(domain.ErrSupplyNotFound)
+
+	appService := supply.NewService(exec, repo, id.NewNoopIDGenerator("missing"))
+
+	_, err := appService.Update(ctx, "missing", updateInput(1))
+	assert.ErrorIs(t, err, domain.ErrSupplyNotFound)
+}
+
+func TestService_Update_VersionRequired(t *testing.T) {
+	ctx := context.Background()
+	exec := uowMocks.NewExecutor(t)
+	repo := mocks.NewSupplyRepository(t)
+	appService := supply.NewService(exec, repo, id.NewNoopIDGenerator("supply-id"))
+
+	for _, v := range []int{0, -1} {
+		_, err := appService.Update(ctx, "supply-id", updateInput(v))
+		assert.ErrorIs(t, err, domain.ErrSupplyVersionRequired, "version %d", v)
+	}
+	exec.AssertNotCalled(t, "Execute", mock.Anything, mock.Anything)
+	repo.AssertNotCalled(t, "UpdateWithVersion", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestService_Update_EmptyID(t *testing.T) {
+	appService := supply.NewService(uowMocks.NewExecutor(t), mocks.NewSupplyRepository(t), id.NewNoopIDGenerator("x"))
+	_, err := appService.Update(context.Background(), "", updateInput(1))
+	assert.ErrorIs(t, err, domain.ErrInvalidSupplyID)
 }
 
 func TestService_Update_ValidationError(t *testing.T) {
@@ -389,7 +460,7 @@ func TestService_Update_ValidationError(t *testing.T) {
 	repo := mocks.NewSupplyRepository(t)
 	validId := "supply-id"
 
-	s := adapters.CreateSupply{} // invalid
+	s := adapters.UpdateSupply{Version: 1} // invalid
 
 	appService := supply.NewService(exec, repo, id.NewNoopIDGenerator(validId))
 
@@ -399,24 +470,13 @@ func TestService_Update_ValidationError(t *testing.T) {
 	assert.ErrorContains(t, err, domain.ErrInvalidSupplyUnitPrice.Error())
 
 	exec.AssertNotCalled(t, "Execute", mock.Anything, mock.Anything)
-	repo.AssertNotCalled(t, "Save", mock.Anything, mock.Anything)
+	repo.AssertNotCalled(t, "UpdateWithVersion", mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestService_Update_UnitOfWorkError(t *testing.T) {
 	ctx := context.Background()
 	exec := uowMocks.NewExecutor(t)
 	repo := mocks.NewSupplyRepository(t)
-
-	s := adapters.CreateSupply{
-		Name:          "Brake Pad",
-		Description:   "High performance brake pad",
-		UnitPrice:     decimal.NewFromFloat(49.99),
-		StockQuantity: 10,
-	}
-
-	repo.EXPECT().Search(mock.Anything, mock.Anything).Return([]domain.Supply{
-		*domain.NewSupply("test", s.Name, s.Description, s.UnitPrice, s.StockQuantity),
-	}, nil)
 
 	expectedErr := errors.New("uow execute failed")
 	exec.
@@ -425,11 +485,7 @@ func TestService_Update_UnitOfWorkError(t *testing.T) {
 		Return(expectedErr)
 
 	appService := supply.NewService(exec, repo, id.NewNoopIDGenerator("test"))
-	_, err := appService.Update(ctx, "test", s)
-	if err == nil {
-		t.Fatalf("expected error, got nil")
-	}
-
+	_, err := appService.Update(ctx, "test", updateInput(1))
 	if !errors.Is(err, expectedErr) {
 		t.Fatalf("expected error %v, got %v", expectedErr, err)
 	}

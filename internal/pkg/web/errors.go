@@ -92,6 +92,7 @@ func isBadRequestError(err error) bool {
 		errors.Is(err, workDomain.ErrInvalidWorkId) ||
 		errors.Is(err, workDomain.ErrInvalidWorkStatusValue) ||
 		errors.Is(err, supplyDomain.ErrInvalidSupplyID) ||
+		errors.Is(err, supplyDomain.ErrSupplyVersionRequired) ||
 		errors.Is(err, supplyDomain.ErrInvalidSupplyAmount) ||
 		errors.Is(err, reservationDomain.ErrInvalidServiceOrderID) ||
 		errors.Is(err, jsonv2.ErrJSONSyntax) ||
@@ -121,6 +122,7 @@ func isConflictError(err error) bool {
 	return errors.Is(err, app.ErrDataConflict) ||
 		errors.Is(err, app.ErrInfraConflict) ||
 		errors.Is(err, reservationDomain.ErrReservationAlreadyExists) ||
+		errors.Is(err, supplyDomain.ErrSupplyVersionConflict) ||
 		errors.Is(err, reservationDomain.ErrInsufficientStock)
 }
 

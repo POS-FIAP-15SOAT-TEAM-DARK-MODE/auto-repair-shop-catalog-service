@@ -85,7 +85,7 @@ func (ctrl *supplyController) List(ctx context.Context, req *http.Request) (adap
 }
 
 func (ctrl *supplyController) Update(ctx context.Context, req *http.Request) (adapters.SupplyResponse, error) {
-	dto := adapters.CreateSupply{}
+	dto := adapters.UpdateSupply{}
 	if err := json.ParseJsonBodyToStruct(req.Body, &dto); err != nil {
 		logger.Of(ctx).Debug("Failed to bind supply creation payload",
 			zap.String("operation", "update_supply"),

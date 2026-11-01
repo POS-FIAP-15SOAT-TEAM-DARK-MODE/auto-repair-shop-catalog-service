@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 
 	"github.com/POS-FIAP-15SOAT-TEAM-DARK-MODE/auto-repair-shop-catalog-service/internal/pkg/db"
 	pgPkg "github.com/POS-FIAP-15SOAT-TEAM-DARK-MODE/auto-repair-shop-catalog-service/internal/pkg/db/postgres"
@@ -28,6 +30,15 @@ const (
 	countSuppliesQuery = `SELECT COUNT(s.id) FROM "supply" s`
 	searchQuery        = `SELECT s.id, s.name, s.description, s.unit_price, s.stock_quantity, s.version FROM "supply" s`
 	deleteQuery        = `DELETE FROM "supply" s where s.id = $1`
+	// Optimistic lock: the row is updated only if its version is still the one the caller read.
+	updateWithVersionQuery = `
+    UPDATE "supply"
+    SET name = $2, description = $3, unit_price = $4, stock_quantity = $5,
+        version = version + 1, updated_at = NOW()
+    WHERE id = $1 AND version = $6
+    RETURNING version
+`
+	supplyExistsQuery = `SELECT EXISTS (SELECT 1 FROM "supply" WHERE id = $1)`
 )
 
 type postgresRepository struct{}
@@ -57,6 +68,41 @@ func (r *postgresRepository) Save(ctx context.Context, supply *domain.Supply) er
 	}
 
 	return nil
+}
+
+func (r *postgresRepository) UpdateWithVersion(ctx context.Context, supply *domain.Supply, expectedVersion int) error {
+	tx, err := postgres.GetTransaction(ctx)
+	if err != nil {
+		return err
+	}
+
+	logger.Of(ctx).Debug("Executing query", zap.String("query", updateWithVersionQuery), zap.Any("params", supply.ID))
+	var version int
+	err = tx.QueryRowContext(ctx, updateWithVersionQuery,
+		supply.ID,
+		supply.Name,
+		supply.Description,
+		supply.UnitPrice,
+		supply.StockQuantity,
+		expectedVersion,
+	).Scan(&version)
+	if err == nil {
+		supply.Version = version
+		return nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return pgPkg.Error(ctx, err)
+	}
+
+	// No row matched the id and version: tell "missing" apart from "stale".
+	var exists bool
+	if err := tx.QueryRowContext(ctx, supplyExistsQuery, supply.ID).Scan(&exists); err != nil {
+		return pgPkg.Error(ctx, err)
+	}
+	if !exists {
+		return domain.ErrSupplyNotFound
+	}
+	return domain.ErrSupplyVersionConflict
 }
 
 func (r *postgresRepository) Delete(ctx context.Context, id string) error {

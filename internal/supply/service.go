@@ -44,9 +44,17 @@ func (svc *supplyService) Create(ctx context.Context, supplyAdapter adapters.Cre
 	return adapters.SupplyDomainToResponse(*supply), nil
 }
 
-func (svc *supplyService) Update(ctx context.Context, id string, supplyAdapter adapters.CreateSupply) (adapters.SupplyResponse, error) {
+// Update applies an optimistic-lock update: the write succeeds only when the
+// stored version equals the version the caller read (supplyAdapter.Version).
+// Stock is therefore never overwritten with a value read before a concurrent
+// reservation (see ADR 0002).
+func (svc *supplyService) Update(ctx context.Context, id string, supplyAdapter adapters.UpdateSupply) (adapters.SupplyResponse, error) {
 	if id == "" {
 		return adapters.SupplyResponse{}, domain.ErrInvalidSupplyID
+	}
+
+	if supplyAdapter.Version < 1 {
+		return adapters.SupplyResponse{}, domain.ErrSupplyVersionRequired
 	}
 
 	supply := domain.NewSupply(
@@ -60,23 +68,8 @@ func (svc *supplyService) Update(ctx context.Context, id string, supplyAdapter a
 		return adapters.SupplyResponse{}, err
 	}
 
-	list, err := svc.repo.Search(ctx, adapters.ListSuppliesParams{
-		PageSize: 1,
-		Page:     1,
-		ID:       id,
-	})
-	if err != nil {
-		return adapters.SupplyResponse{}, err
-	}
-
-	if len(list) == 0 {
-		return adapters.SupplyResponse{}, domain.ErrSupplyNotFound
-	}
-
-	supply.Version = list[0].Version + 1
-
-	err = svc.uow.Execute(ctx, func(transactionContext context.Context) error {
-		return svc.repo.Save(transactionContext, supply)
+	err := svc.uow.Execute(ctx, func(transactionContext context.Context) error {
+		return svc.repo.UpdateWithVersion(transactionContext, supply, supplyAdapter.Version)
 	})
 	if err != nil {
 		return adapters.SupplyResponse{}, err

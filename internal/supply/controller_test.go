@@ -45,6 +45,13 @@ func validSupplyPayload() map[string]any {
 	}
 }
 
+// updateSupplyPayload is the PUT body: the supply fields plus the version the client read.
+func updateSupplyPayload() map[string]any {
+	p := validSupplyPayload()
+	p["version"] = 1
+	return p
+}
+
 func toJSON(t *testing.T, v any) *bytes.Buffer {
 	t.Helper()
 	b, err := json.Marshal(v)
@@ -289,21 +296,43 @@ func TestUpdate(t *testing.T) {
 		{
 			name:    "success_updates_supply",
 			id:      validID,
-			payload: validSupplyPayload(),
+			payload: updateSupplyPayload(),
 			mockSetup: func(svc *mocks.SupplyService) {
 				svc.EXPECT().
-					Update(mock.Anything, validID, mock.AnythingOfType("adapters.CreateSupply")).
+					Update(mock.Anything, validID, mock.AnythingOfType("adapters.UpdateSupply")).
 					Return(adapters.SupplyResponse{}, nil)
 			},
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:    "service_error_returns_internal_error",
+			name:    "missing_version_returns_bad_request",
 			id:      validID,
 			payload: validSupplyPayload(),
 			mockSetup: func(svc *mocks.SupplyService) {
 				svc.EXPECT().
-					Update(mock.Anything, validID, mock.AnythingOfType("adapters.CreateSupply")).
+					Update(mock.Anything, validID, mock.AnythingOfType("adapters.UpdateSupply")).
+					Return(adapters.SupplyResponse{}, domain.ErrSupplyVersionRequired)
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:    "stale_version_returns_conflict",
+			id:      validID,
+			payload: updateSupplyPayload(),
+			mockSetup: func(svc *mocks.SupplyService) {
+				svc.EXPECT().
+					Update(mock.Anything, validID, mock.AnythingOfType("adapters.UpdateSupply")).
+					Return(adapters.SupplyResponse{}, domain.ErrSupplyVersionConflict)
+			},
+			expectedStatus: http.StatusConflict,
+		},
+		{
+			name:    "service_error_returns_internal_error",
+			id:      validID,
+			payload: updateSupplyPayload(),
+			mockSetup: func(svc *mocks.SupplyService) {
+				svc.EXPECT().
+					Update(mock.Anything, validID, mock.AnythingOfType("adapters.UpdateSupply")).
 					Return(adapters.SupplyResponse{}, errors.New("internal error"))
 			},
 			expectedStatus: http.StatusInternalServerError,
@@ -346,8 +375,8 @@ func TestUpdate_ResponseBody(t *testing.T) {
 
 	svc := mocks.NewSupplyService(t)
 	svc.EXPECT().
-		Update(mock.Anything, validID, mock.AnythingOfType("adapters.CreateSupply")).
-		RunAndReturn(func(ctx context.Context, id string, createSupply adapters.CreateSupply) (adapters.SupplyResponse, error) {
+		Update(mock.Anything, validID, mock.AnythingOfType("adapters.UpdateSupply")).
+		RunAndReturn(func(ctx context.Context, id string, updateSupply adapters.UpdateSupply) (adapters.SupplyResponse, error) {
 			res := adapters.SupplyDomainToResponse(*validSupplyDomain())
 			res.ID = id
 			return res, nil
@@ -360,7 +389,7 @@ func TestUpdate_ResponseBody(t *testing.T) {
 	c.Params = gin.Params{gin.Param{Key: "id", Value: validID}}
 
 	url := fmt.Sprintf("/%s", validID)
-	req := httptest.NewRequest(http.MethodPut, url, toJSON(t, validSupplyPayload()))
+	req := httptest.NewRequest(http.MethodPut, url, toJSON(t, updateSupplyPayload()))
 	req.Header.Set("Content-Type", "application/json")
 	c.Request = req
 
