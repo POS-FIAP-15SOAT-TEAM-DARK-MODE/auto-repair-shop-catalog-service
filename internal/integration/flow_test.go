@@ -33,6 +33,8 @@ func TestReservationFlow(t *testing.T) {
 	status, body := te.call(t, http.MethodPost, "/internal/reservations", reserveBody(soID, supplyID, 2), internal)
 	require.Equal(t, http.StatusCreated, status, body)
 	assert.Equal(t, 8, te.stock(t, supplyID), "reserving decrements stock")
+	assert.Contains(t, body, `"description":"Filtro de teste de integração"`)
+	assert.Contains(t, body, `"version":2`, "version is supply.version after the decrement")
 
 	status, _ = te.call(t, http.MethodPost, "/internal/reservations", reserveBody(uuid.NewString()[:26], supplyID, 9), internal)
 	assert.Equal(t, http.StatusConflict, status, "insufficient stock")
@@ -93,6 +95,7 @@ func TestInternalWorkLookup(t *testing.T) {
 
 	status, body := te.call(t, http.MethodGet, "/internal/works/"+id, "", map[string]string{"X-Internal-Token": internalToken})
 	require.Equal(t, http.StatusOK, status, body)
+	assert.Contains(t, body, `"description":"Troca de óleo do motor"`)
 	assert.Contains(t, body, `"unit_price":"150.00"`)
 	assert.Contains(t, body, `"active":true`)
 
