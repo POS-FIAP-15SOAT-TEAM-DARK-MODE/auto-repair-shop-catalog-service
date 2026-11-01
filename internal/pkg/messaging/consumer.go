@@ -17,8 +17,10 @@ import (
 const (
 	longPollSeconds = 20
 	maxMessages     = 10
-	retryBackoff    = time.Second
 )
+
+// retryBackoff is the pause after a failed ReceiveMessage call (a variable so tests can shorten it).
+var retryBackoff = time.Second
 
 // Handler applies one message type. It runs inside the unit of work that also
 // records the message id, so a failed handler leaves no dedupe record behind.
