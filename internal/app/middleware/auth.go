@@ -19,8 +19,7 @@ func Auth(routeRoles ...auth.Role) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := c.GetHeader(authorizationHeader)
 		if token == "" || !strings.HasPrefix(token, bearerPrefix) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-			c.Abort()
+			abortWithError(c, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
 
@@ -29,19 +28,21 @@ func Auth(routeRoles ...auth.Role) gin.HandlerFunc {
 		userClaims, err := auth.GetClaims(token)
 		if err != nil {
 			if errors.Is(err, jwt.ErrTokenExpired) {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Token expired"})
-				c.Abort()
+				abortWithError(c, http.StatusUnauthorized, "Token expired")
 				return
 			}
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-			c.Abort()
+			abortWithError(c, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
 
 		if !auth.HasRequiredRoles(userClaims.Roles, routeRoles) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Forbidden"})
-			c.Abort()
+			abortWithError(c, http.StatusForbidden, "Forbidden")
 			return
 		}
 	}
+}
+
+// abortWithError answers the standard error body {"code":N,"error":"..."} and stops the chain.
+func abortWithError(c *gin.Context, status int, msg string) {
+	c.AbortWithStatusJSON(status, gin.H{"code": status, "error": msg})
 }
