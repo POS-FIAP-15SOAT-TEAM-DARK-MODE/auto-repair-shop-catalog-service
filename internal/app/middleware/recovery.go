@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"fmt"
 	"net/http"
 	"runtime/debug"
 
@@ -22,8 +21,8 @@ func Recovery() gin.HandlerFunc {
 				)
 
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-					"error":   "internal server error",
-					"details": fmt.Sprintf("%v", err),
+					"code":  http.StatusInternalServerError,
+					"error": "internal server error",
 				})
 			}
 		}()
@@ -47,7 +46,14 @@ func ErrorHandler() gin.HandlerFunc {
 			status = http.StatusInternalServerError
 		}
 
+		if status >= http.StatusInternalServerError {
+			// Causes stay in the server log; the client gets only the generic text.
+			c.JSON(status, gin.H{"code": status, "error": http.StatusText(status)})
+			return
+		}
+
 		c.JSON(status, gin.H{
+			"code":    status,
 			"error":   http.StatusText(status),
 			"details": errs,
 		})

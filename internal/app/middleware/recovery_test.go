@@ -24,7 +24,8 @@ func TestRecoveryMiddleware(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
-	assert.Contains(t, rec.Body.String(), "internal server error")
+	assert.JSONEq(t, `{"code":500,"error":"internal server error"}`, rec.Body.String())
+	assert.NotContains(t, rec.Body.String(), "test panic", "panic value must not reach the client")
 }
 
 func TestErrorHandlerMiddleware(t *testing.T) {
@@ -42,6 +43,7 @@ func TestErrorHandlerMiddleware(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Contains(t, rec.Body.String(), "custom error")
+	assert.Contains(t, rec.Body.String(), `"code":400`)
 }
 
 func TestErrorHandlerMiddleware_NoErrors(t *testing.T) {
