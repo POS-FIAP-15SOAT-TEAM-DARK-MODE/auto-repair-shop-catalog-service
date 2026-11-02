@@ -18,8 +18,35 @@ const (
 	msgInvalidData         = "invalid data"
 )
 
-// Domain sentinels per client-facing status. Their messages are safe to expose.
+// Known sentinels grouped by the client-facing answer. Their messages are safe to expose.
 var (
+	unauthorizedErrors = []error{
+		auth.ErrInvalidCredentials,
+	}
+	// validationErrors answer 400; their messages go to errors[].
+	validationErrors = []error{
+		workDomain.ErrEmptyWorkName,
+		workDomain.ErrWorkNameShorterThenRequired,
+		workDomain.ErrEmptyWorkDescription,
+		workDomain.ErrWorkDescriptionShorterThenRequired,
+		workDomain.ErrInvalidWorkId,
+		workDomain.ErrInvalidWorkStatusValue,
+		supplyDomain.ErrInvalidSupplyID,
+		supplyDomain.ErrInvalidSupplyId,
+		supplyDomain.ErrInvalidSupplyName,
+		supplyDomain.ErrInvalidSupplyDescription,
+		supplyDomain.ErrInvalidSupplyUnitPrice,
+		supplyDomain.ErrInvalidSupplyStockQuantity,
+		supplyDomain.ErrInvalidSupplyVersion,
+		supplyDomain.ErrSupplyVersionRequired,
+		supplyDomain.ErrInvalidSupplyAmount,
+		reservationDomain.ErrInvalidServiceOrderID,
+		jsonv2.ErrJSONSyntax,
+		jsonv2.ErrJSONType,
+		jsonv2.ErrJSONUnexpectedEOF,
+		jsonv2.ErrJSONEmptyBody,
+		jsonv2.ErrWrongPayloadFormat,
+	}
 	notFoundErrors = []error{
 		workDomain.ErrWorkNotFound,
 		supplyDomain.ErrSupplyNotFound,
@@ -42,6 +69,12 @@ var (
 		app.ErrDataConflict,
 		app.ErrInfraConflict,
 		app.ErrDataViolation,
+	}
+	// serializationErrors are JSON encoding problems on our side: 500.
+	serializationErrors = []error{
+		jsonv2.ErrJSONUnsupportedValue,
+		jsonv2.ErrJSONUnsupportedType,
+		jsonv2.ErrJSONInvalidUnmarshal,
 	}
 )
 
@@ -70,11 +103,14 @@ func IsInfrastructureError(err error) bool {
 }
 
 // getHTTPStatus determines the HTTP status code for a given error.
+// An error answers 4xx only when every one of its causes is a known sentinel.
 func getHTTPStatus(err error) int {
 	switch {
+	case hasUnknownCause(err):
+		return http.StatusInternalServerError
 	case isUnauthorizedError(err):
 		return http.StatusUnauthorized
-	case isBadRequestError(err), IsJoined(err):
+	case isValidationError(err):
 		return http.StatusBadRequest
 	case isNotFoundError(err):
 		return http.StatusNotFound
@@ -89,22 +125,14 @@ func getHTTPStatus(err error) int {
 	}
 }
 
-func IsJoined(err error) bool {
-	type unwrapper interface {
-		Unwrap() []error
-	}
-
-	var uw unwrapper
-	return errors.As(err, &uw)
-}
-
 // buildErrorMessages formats the error messages based on status code.
-// Infrastructure causes never leave the server: 5xx and infra 409/422 get generic messages.
+// Bodies only ever contain sentinel messages, never wrap context or driver text.
 func buildErrorMessages(err error, status int) ([]string, string) {
 	switch status {
-	case http.StatusUnauthorized, http.StatusForbidden, http.StatusBadRequest:
-		// For 4XX BadRequest provide stack of errors.
-		return unwrapAll(err), ""
+	case http.StatusBadRequest:
+		return sentinelMessages(err, validationErrors), ""
+	case http.StatusUnauthorized:
+		return sentinelMessages(err, unauthorizedErrors), ""
 	case http.StatusNotFound:
 		return nil, domainMessage(err, notFoundErrors)
 	case http.StatusConflict:
@@ -122,7 +150,7 @@ func buildErrorMessages(err error, status int) ([]string, string) {
 	}
 }
 
-// domainMessage returns the message of the domain sentinel matched by err.
+// domainMessage returns the message of the first domain sentinel matched by err.
 // Wrapping context and infrastructure causes are never included.
 func domainMessage(err error, sentinels []error) string {
 	for _, s := range sentinels {
@@ -131,6 +159,77 @@ func domainMessage(err error, sentinels []error) string {
 		}
 	}
 	return msgInternalServerError
+}
+
+// sentinelMessages returns, in order, the message of the sentinel matched by each
+// cause of err that belongs to the given list. Other causes are never included.
+func sentinelMessages(err error, sentinels []error) []string {
+	var msgs []string
+	for _, cause := range causes(err) {
+		for _, s := range sentinels {
+			if errors.Is(cause, s) {
+				msgs = append(msgs, s.Error())
+				break
+			}
+		}
+	}
+	return msgs
+}
+
+// causes returns the innermost errors of err, following every branch of joins and wraps in order.
+func causes(err error) []error {
+	if err == nil {
+		return nil
+	}
+
+	type multiUnwrap interface {
+		Unwrap() []error
+	}
+	type singleUnwrap interface {
+		Unwrap() error
+	}
+
+	switch u := err.(type) {
+	case multiUnwrap:
+		var out []error
+		for _, e := range u.Unwrap() {
+			out = append(out, causes(e)...)
+		}
+		return out
+	case singleUnwrap:
+		if inner := u.Unwrap(); inner != nil {
+			return causes(inner)
+		}
+	}
+	return []error{err}
+}
+
+// hasUnknownCause reports whether any cause of err is neither a known sentinel nor
+// a known infrastructure error. Such errors answer 500 generically, even when they
+// are joined with a validation error.
+func hasUnknownCause(err error) bool {
+	for _, cause := range causes(err) {
+		if !matchesAny(cause, knownErrors()) {
+			return true
+		}
+	}
+	return false
+}
+
+func knownErrors() []error {
+	var all []error
+	for _, group := range [][]error{
+		unauthorizedErrors,
+		validationErrors,
+		notFoundErrors,
+		domainConflictErrors,
+		domainUnprocessableErrors,
+		infrastructureErrors,
+		serializationErrors,
+	} {
+		all = append(all, group...)
+	}
+	return all
 }
 
 func matchesAny(err error, sentinels []error) bool {
@@ -142,28 +241,8 @@ func matchesAny(err error, sentinels []error) bool {
 	return false
 }
 
-func isBadRequestError(err error) bool {
-	return errors.Is(err, workDomain.ErrEmptyWorkName) ||
-		errors.Is(err, workDomain.ErrWorkNameShorterThenRequired) ||
-		errors.Is(err, workDomain.ErrEmptyWorkDescription) ||
-		errors.Is(err, workDomain.ErrWorkDescriptionShorterThenRequired) ||
-		errors.Is(err, workDomain.ErrInvalidWorkId) ||
-		errors.Is(err, workDomain.ErrInvalidWorkStatusValue) ||
-		errors.Is(err, supplyDomain.ErrInvalidSupplyID) ||
-		errors.Is(err, supplyDomain.ErrInvalidSupplyId) ||
-		errors.Is(err, supplyDomain.ErrInvalidSupplyName) ||
-		errors.Is(err, supplyDomain.ErrInvalidSupplyDescription) ||
-		errors.Is(err, supplyDomain.ErrInvalidSupplyUnitPrice) ||
-		errors.Is(err, supplyDomain.ErrInvalidSupplyStockQuantity) ||
-		errors.Is(err, supplyDomain.ErrInvalidSupplyVersion) ||
-		errors.Is(err, supplyDomain.ErrSupplyVersionRequired) ||
-		errors.Is(err, supplyDomain.ErrInvalidSupplyAmount) ||
-		errors.Is(err, reservationDomain.ErrInvalidServiceOrderID) ||
-		errors.Is(err, jsonv2.ErrJSONSyntax) ||
-		errors.Is(err, jsonv2.ErrJSONType) ||
-		errors.Is(err, jsonv2.ErrJSONUnexpectedEOF) ||
-		errors.Is(err, jsonv2.ErrJSONEmptyBody) ||
-		errors.Is(err, jsonv2.ErrWrongPayloadFormat)
+func isValidationError(err error) bool {
+	return len(sentinelMessages(err, validationErrors)) > 0
 }
 
 func isNotFoundError(err error) bool {
@@ -171,13 +250,11 @@ func isNotFoundError(err error) bool {
 }
 
 func isUnauthorizedError(err error) bool {
-	return errors.Is(err, auth.ErrInvalidCredentials)
+	return matchesAny(err, unauthorizedErrors)
 }
 
 func isInternalServerError(err error) bool {
-	return errors.Is(err, jsonv2.ErrJSONUnsupportedValue) ||
-		errors.Is(err, jsonv2.ErrJSONUnsupportedType) ||
-		errors.Is(err, jsonv2.ErrJSONInvalidUnmarshal)
+	return matchesAny(err, serializationErrors)
 }
 
 func isConflictError(err error) bool {
@@ -189,22 +266,4 @@ func isConflictError(err error) bool {
 func isUnprocessableEntityError(err error) bool {
 	return errors.Is(err, app.ErrDataViolation) ||
 		matchesAny(err, domainUnprocessableErrors)
-}
-
-func unwrapAll(err error) []string {
-	if err == nil {
-		return nil
-	}
-
-	type multiUnwrap interface {
-		Unwrap() []error
-	}
-	if m, ok := err.(multiUnwrap); ok {
-		var all []string
-		for _, e := range m.Unwrap() {
-			all = append(all, unwrapAll(e)...)
-		}
-		return all
-	}
-	return []string{err.Error()}
 }

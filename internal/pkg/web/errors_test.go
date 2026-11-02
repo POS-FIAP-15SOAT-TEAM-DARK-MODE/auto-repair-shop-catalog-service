@@ -111,3 +111,55 @@ func TestIsInfrastructureError(t *testing.T) {
 	assert.False(t, IsInfrastructureError(pgLike))
 	assert.False(t, IsInfrastructureError(supplyDomain.ErrSupplyOutOfStock))
 }
+
+func TestError_JoinedValidationSentinelsAnswer400WithTheirMessages(t *testing.T) {
+	err := errors.Join(
+		supplyDomain.ErrInvalidSupplyName,
+		supplyDomain.ErrInvalidSupplyDescription,
+		supplyDomain.ErrInvalidSupplyUnitPrice,
+		supplyDomain.ErrInvalidSupplyStockQuantity,
+		supplyDomain.ErrInvalidSupplyVersion,
+	)
+	status, body := Error(err)
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Equal(t, http.StatusBadRequest, body.StatusCode)
+	assert.Empty(t, body.Error)
+	assert.Equal(t, []string{
+		supplyDomain.ErrInvalidSupplyName.Error(),
+		supplyDomain.ErrInvalidSupplyDescription.Error(),
+		supplyDomain.ErrInvalidSupplyUnitPrice.Error(),
+		supplyDomain.ErrInvalidSupplyStockQuantity.Error(),
+		supplyDomain.ErrInvalidSupplyVersion.Error(),
+	}, body.Errors)
+}
+
+func TestError_JoinedWithDriverErrorAnswers500(t *testing.T) {
+	err := errors.Join(supplyDomain.ErrInvalidSupplyName, pgLike)
+	status, body := Error(err)
+	assert.Equal(t, http.StatusInternalServerError, status)
+	assert.Equal(t, http.StatusInternalServerError, body.StatusCode)
+	assert.Equal(t, "internal server error", body.Error)
+	assert.Empty(t, body.Errors)
+	assert.NotContains(t, fmt.Sprint(body), "pq:")
+}
+
+func TestError_JoinedDriverErrorOnlyAnswers500(t *testing.T) {
+	status, body := Error(errors.Join(pgLike, errors.New("other")))
+	assert.Equal(t, http.StatusInternalServerError, status)
+	assert.Equal(t, "internal server error", body.Error)
+	assert.NotContains(t, fmt.Sprint(body), "pq:")
+}
+
+func TestError_ValidationWrappingDriverTextKeepsOnlySentinelMessage(t *testing.T) {
+	status, body := Error(fmt.Errorf("%w: %v", supplyDomain.ErrInvalidSupplyName, pgLike))
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Equal(t, []string{supplyDomain.ErrInvalidSupplyName.Error()}, body.Errors)
+	assert.NotContains(t, fmt.Sprint(body), "pq:")
+}
+
+func TestError_UnauthorizedWrappingDriverTextAnswers401WithSentinelOnly(t *testing.T) {
+	status, body := Error(fmt.Errorf("%w: %v", auth.ErrInvalidCredentials, pgLike))
+	assert.Equal(t, http.StatusUnauthorized, status)
+	assert.Equal(t, []string{auth.ErrInvalidCredentials.Error()}, body.Errors)
+	assert.NotContains(t, fmt.Sprint(body), "pq:")
+}
