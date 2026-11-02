@@ -1,8 +1,10 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"runtime/debug"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -13,9 +15,10 @@ import (
 func Recovery() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
-			if err := recover(); err != nil {
+			if rec := recover(); rec != nil {
 				stack := debug.Stack()
-				logger.Of(c).Error(err.(error),
+				logger.Of(c).Error(fmt.Errorf("panic: %v", rec),
+					zap.String("event", "request.panic"),
 					zap.String("behavior", "[PANIC RECOVERED]"),
 					zap.String("stack", string(stack)),
 				)
@@ -39,23 +42,15 @@ func ErrorHandler() gin.HandlerFunc {
 			return
 		}
 
-		errs := c.Errors.Errors()
-
 		status := c.Writer.Status()
 		if status == http.StatusOK {
 			status = http.StatusInternalServerError
 		}
 
-		if status >= http.StatusInternalServerError {
-			// Causes stay in the server log; the client gets only the generic text.
-			c.JSON(status, gin.H{"code": status, "error": http.StatusText(status)})
-			return
-		}
-
+		// The errors are already logged by the Logger middleware; the body stays generic.
 		c.JSON(status, gin.H{
-			"code":    status,
-			"error":   http.StatusText(status),
-			"details": errs,
+			"code":  status,
+			"error": strings.ToLower(http.StatusText(status)),
 		})
 	}
 }
