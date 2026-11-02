@@ -158,7 +158,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 code: 422
-                error: data violates business constraints
+                error: invalid data
         '500':
           description: Internal server error
           content:
@@ -167,7 +167,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 code: 500
-                error: Internal Server Error
+                error: internal server error
     get:
       summary: List supplies
       description: Returns a paginated list of supplies with optional status filter.
@@ -212,7 +212,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 code: 500
-                error: Internal Server Error
+                error: internal server error
   /v1/supplies/{id}:
     put:
       summary: Update a supply
@@ -262,7 +262,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 code: 422
-                error: data violates business constraints
+                error: invalid data
         '500':
           description: Internal server error
           content:
@@ -271,7 +271,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 code: 500
-                error: Internal Server Error
+                error: internal server error
         '409':
           description: 'Version conflict: the supply was modified by someone else. Reload the supply and try again.'
           content:
@@ -323,7 +323,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 code: 500
-                error: Internal Server Error
+                error: internal server error
 components:
   securitySchemes:
     SessionToken:
