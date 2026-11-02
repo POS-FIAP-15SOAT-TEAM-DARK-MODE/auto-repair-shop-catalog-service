@@ -107,11 +107,7 @@ func (c *Consumer) Run(ctx context.Context) {
 
 func (c *Consumer) handle(ctx context.Context, m types.Message) {
 	ack, err := c.process(ctx, aws.ToString(m.Body))
-	if err != nil {
-		logger.Global().Error(err, zap.String("operation", "sqs_process"))
-		return
-	}
-	if !ack {
+	if err != nil || !ack {
 		return
 	}
 	if _, err := c.sqs.DeleteMessage(ctx, &sqs.DeleteMessageInput{
@@ -119,37 +115,46 @@ func (c *Consumer) handle(ctx context.Context, m types.Message) {
 		ReceiptHandle: m.ReceiptHandle,
 	}); err != nil {
 		// The message will be redelivered; the dedupe record makes that harmless.
-		logger.Global().Error(err, zap.String("operation", "sqs_delete"))
+		logger.Of(ctx).Error(err, zap.String("operation", "sqs_delete"))
 	}
 }
 
 // process returns ack=true when the message must be deleted from the queue.
+// The envelope's identifiers are put in the logger context first, so every line
+// about this message (including its failure) is traceable by message_id/saga_id.
 func (c *Consumer) process(ctx context.Context, body string) (bool, error) {
 	env, err := Decode([]byte(body))
 	if err != nil {
-		logger.Global().Warn("discarding undecodable message", zap.String("operation", "sqs_decode"))
+		logger.Of(ctx).Warn("message.discarded", zap.String("reason", "undecodable"))
 		return true, nil
 	}
 
+	ctx = logger.With(ctx, env.LogFields()...)
 	handler, ok := c.handlers[env.Type]
 	if !ok {
-		logger.Global().Info("discarding message of unknown type", zap.String("type", env.Type))
+		logger.Of(ctx).Info("message.discarded", zap.String("reason", "unknown_type"))
 		return true, nil
 	}
 
+	duplicate := false
 	err = c.uow.Execute(ctx, func(txCtx context.Context) error {
 		first, err := c.dedupe.MarkProcessed(txCtx, env.MessageID)
 		if err != nil {
 			return err
 		}
 		if !first {
-			logger.Global().Info("duplicate message ignored", zap.String("type", env.Type))
+			duplicate = true
+			logger.Of(txCtx).Info("message.duplicate")
 			return nil
 		}
 		return handler(txCtx, env)
 	})
 	if err != nil {
+		logger.Of(ctx).Error(err, zap.String("operation", "sqs_process"))
 		return false, err
+	}
+	if !duplicate {
+		logger.Of(ctx).Info("message.processed")
 	}
 	return true, nil
 }

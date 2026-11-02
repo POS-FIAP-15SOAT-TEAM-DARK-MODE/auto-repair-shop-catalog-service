@@ -3,12 +3,12 @@
 #
 # Types: feat | fix | refactor | test | chore | docs | perf | style | revert
 #
-# Scopes: os | cliente | veiculo | servico | peca | estoque | orcamento |
-#         auth | usuario | infra | db | api
+# Scopes: catalog | work | supply | reservation | messaging | auth | web |
+#         middleware | routing | api | db | infra | k8s | integration | ci | deps
 #
 # --- Examples ---
-# feat(os): add status transition validation
-# fix(estoque): prevent negative stock on concurrent decrements
+# feat(reservation): reject reserve when stock is insufficient
+# fix(supply): keep version conflict as 409 on concurrent updates
 # refactor(auth): extract JWT claims parsing to helper
-# test(orcamento): add edge cases for zero-item budget calculation
+# test(work): add edge cases for inactive work lookup
 # chore(infra): update docker-compose postgres version

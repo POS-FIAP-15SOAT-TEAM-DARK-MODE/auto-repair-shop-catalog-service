@@ -33,18 +33,26 @@ func initGlobalLogger() {
 }
 
 func initLogger() *zap.Logger {
-	cfg := zap.NewProductionConfig()
-	cfg.EncoderConfig.TimeKey = "timestamp"
-	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	cfg.EncoderConfig.MessageKey = "message"
-	cfg.Level = getLogLevel(env.GetString("LOG_LEVEL", "INFO"))
-
-	l, err := cfg.Build()
+	l, err := newConfig().Build()
 	if err != nil {
 		panic(err)
 	}
 
 	return l
+}
+
+// newConfig is the JSON production config. Every line carries "service" so logs
+// from the whole saga can be filtered by emitter in Loki.
+func newConfig() zap.Config {
+	cfg := zap.NewProductionConfig()
+	cfg.EncoderConfig.TimeKey = "timestamp"
+	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	cfg.EncoderConfig.MessageKey = "message"
+	cfg.InitialFields = map[string]interface{}{
+		"service": env.GetString("SERVICE_NAME", "catalog-service"),
+	}
+	cfg.Level = getLogLevel(env.GetString("LOG_LEVEL", "INFO"))
+	return cfg
 }
 
 func getLogLevel(level string) zap.AtomicLevel {
@@ -76,6 +84,13 @@ func Request(ctx context.Context, incomingID string) (context.Context, string) {
 		zap.String("request_id", reqId),
 	)
 	return withContext(ctx, &customLogger{l}), reqId
+}
+
+// With returns a context whose logger is the one already in ctx plus fields.
+// Use it where identifiers become known (e.g. a consumed message's saga_id),
+// so every later log line for that unit of work carries them.
+func With(ctx context.Context, fields ...zap.Field) context.Context {
+	return withContext(ctx, &customLogger{Of(ctx).Logger.With(sanitizeFields(fields)...)})
 }
 
 func Of(ctx context.Context) *customLogger {
@@ -146,7 +161,12 @@ func isSensitiveKey(key string) bool {
 		key == "senha" ||
 		key == "pwd" ||
 		key == "token" ||
+		key == "jwt" ||
+		key == "access_token" ||
 		key == "authorization" ||
+		key == "x-internal-token" ||
+		key == "internal_token" ||
+		key == "jwt_secret" ||
 		key == "cpf" ||
 		key == "cnpj" ||
 		key == "document" ||

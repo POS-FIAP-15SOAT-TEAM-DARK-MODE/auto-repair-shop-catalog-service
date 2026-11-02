@@ -103,11 +103,11 @@ func (svc *supplyService) List(ctx context.Context, params adapters.ListSupplies
 	})
 
 	eg.Go(func() error {
-		vehicles, err := svc.repo.Search(groupCtx, params)
+		supplies, err := svc.repo.Search(groupCtx, params)
 		if err != nil {
 			return err
 		}
-		items = vehicles
+		items = supplies
 		return nil
 	})
 
@@ -120,7 +120,7 @@ func (svc *supplyService) List(ctx context.Context, params adapters.ListSupplies
 		TotalItems: totalItems,
 		Page:       params.Page,
 		PageSize:   params.PageSize,
-		TotalPages: int64(math.Max(float64(totalItems/params.PageSize), 1)),
+		TotalPages: int64(math.Max(1, math.Ceil(float64(totalItems)/float64(params.PageSize)))),
 	}, nil
 }
 

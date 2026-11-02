@@ -12,6 +12,7 @@ import (
 	reservationDomain "github.com/POS-FIAP-15SOAT-TEAM-DARK-MODE/auto-repair-shop-catalog-service/internal/reservation/domain"
 	supplyDomain "github.com/POS-FIAP-15SOAT-TEAM-DARK-MODE/auto-repair-shop-catalog-service/internal/supply/domain"
 	workDomain "github.com/POS-FIAP-15SOAT-TEAM-DARK-MODE/auto-repair-shop-catalog-service/internal/work/domain"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,6 +25,14 @@ func TestError_StatusMapping(t *testing.T) {
 		{"unauthorized", auth.ErrInvalidCredentials, http.StatusUnauthorized},
 		{"bad request work name", workDomain.ErrEmptyWorkName, http.StatusBadRequest},
 		{"bad request supply id", supplyDomain.ErrInvalidSupplyID, http.StatusBadRequest},
+		{"bad request supply id (alias)", supplyDomain.ErrInvalidSupplyId, http.StatusBadRequest},
+		{"bad request supply name", supplyDomain.ErrInvalidSupplyName, http.StatusBadRequest},
+		{"bad request supply description", supplyDomain.ErrInvalidSupplyDescription, http.StatusBadRequest},
+		{"bad request supply unit price", supplyDomain.ErrInvalidSupplyUnitPrice, http.StatusBadRequest},
+		{"bad request supply stock quantity", supplyDomain.ErrInvalidSupplyStockQuantity, http.StatusBadRequest},
+		{"bad request supply version", supplyDomain.ErrInvalidSupplyVersion, http.StatusBadRequest},
+		{"bad request supply version required", supplyDomain.ErrSupplyVersionRequired, http.StatusBadRequest},
+		{"bad request supply amount", supplyDomain.ErrInvalidSupplyAmount, http.StatusBadRequest},
 		{"bad request service order", reservationDomain.ErrInvalidServiceOrderID, http.StatusBadRequest},
 		{"bad request json", jsonv2.ErrJSONSyntax, http.StatusBadRequest},
 		{"joined errors are bad request", errors.Join(workDomain.ErrEmptyWorkName, workDomain.ErrWorkNameShorterThenRequired), http.StatusBadRequest},
@@ -57,8 +66,128 @@ func TestError_BodyShapes(t *testing.T) {
 	assert.Len(t, body.Errors, 2)
 
 	_, body = Error(fmt.Errorf("outer: %w", reservationDomain.ErrInsufficientStock))
-	assert.Equal(t, reservationDomain.ErrInsufficientStock.Error(), body.Error, "409/422/5xx expose the root cause")
+	assert.Equal(t, reservationDomain.ErrInsufficientStock.Error(), body.Error, "domain 409 keeps its own message, without wrap context")
 
 	_, body = Error(fmt.Errorf("x"))
-	assert.Equal(t, "x", body.Error, "500 exposes the root cause message")
+	assert.Equal(t, "internal server error", body.Error, "500 never exposes the cause")
+}
+
+// pgLike mimics a driver error text that must never reach a client.
+var pgLike = errors.New(`pq: duplicate key value violates unique constraint "supplies_pkey" (value 42)`)
+
+func TestError_DoesNotLeakInfrastructureCause(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantMsg    string
+	}{
+		{"500 unknown driver error", pgLike, http.StatusInternalServerError, "internal server error"},
+		{"500 wrapped driver error", fmt.Errorf("repo: %w", pgLike), http.StatusInternalServerError, "internal server error"},
+		{"500 json unsupported with cause", fmt.Errorf("%w: %v", jsonv2.ErrJSONUnsupportedValue, pgLike), http.StatusInternalServerError, "internal server error"},
+		{"409 data conflict wrapping driver error", fmt.Errorf("%w: %v", app.ErrDataConflict, pgLike), http.StatusConflict, "conflict"},
+		{"409 infra conflict", fmt.Errorf("save: %w", app.ErrInfraConflict), http.StatusConflict, "conflict"},
+		{"422 data violation wrapping driver error", fmt.Errorf("%w: %v", app.ErrDataViolation, pgLike), http.StatusUnprocessableEntity, "invalid data"},
+		{"409 domain keeps message", fmt.Errorf("%w: %v", reservationDomain.ErrReservationAlreadyExists, pgLike), http.StatusConflict, reservationDomain.ErrReservationAlreadyExists.Error()},
+		{"422 domain keeps message", supplyDomain.ErrSupplyOutOfStock, http.StatusUnprocessableEntity, supplyDomain.ErrSupplyOutOfStock.Error()},
+		{"404 domain keeps message", fmt.Errorf("find: %w", supplyDomain.ErrSupplyNotFound), http.StatusNotFound, supplyDomain.ErrSupplyNotFound.Error()},
+		{"409 supply version conflict keeps message", supplyDomain.ErrSupplyVersionConflict, http.StatusConflict, supplyDomain.ErrSupplyVersionConflict.Error()},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status, body := Error(tt.err)
+			assert.Equal(t, tt.wantStatus, status)
+			assert.Equal(t, tt.wantStatus, body.StatusCode)
+			assert.Equal(t, tt.wantMsg, body.Error)
+			assert.NotContains(t, body.Error, "pq:")
+			assert.NotContains(t, body.Error, "supplies_pkey")
+		})
+	}
+}
+
+func TestIsInfrastructureError(t *testing.T) {
+	assert.True(t, IsInfrastructureError(fmt.Errorf("x: %w", app.ErrDataConflict)))
+	assert.True(t, IsInfrastructureError(app.ErrInfraConflict))
+	assert.True(t, IsInfrastructureError(app.ErrDataViolation))
+	assert.False(t, IsInfrastructureError(pgLike))
+	assert.False(t, IsInfrastructureError(supplyDomain.ErrSupplyOutOfStock))
+}
+
+func TestError_JoinedValidationSentinelsAnswer400WithTheirMessages(t *testing.T) {
+	err := errors.Join(
+		supplyDomain.ErrInvalidSupplyName,
+		supplyDomain.ErrInvalidSupplyDescription,
+		supplyDomain.ErrInvalidSupplyUnitPrice,
+		supplyDomain.ErrInvalidSupplyStockQuantity,
+		supplyDomain.ErrInvalidSupplyVersion,
+	)
+	status, body := Error(err)
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Equal(t, http.StatusBadRequest, body.StatusCode)
+	assert.Empty(t, body.Error)
+	assert.Equal(t, []string{
+		supplyDomain.ErrInvalidSupplyName.Error(),
+		supplyDomain.ErrInvalidSupplyDescription.Error(),
+		supplyDomain.ErrInvalidSupplyUnitPrice.Error(),
+		supplyDomain.ErrInvalidSupplyStockQuantity.Error(),
+		supplyDomain.ErrInvalidSupplyVersion.Error(),
+	}, body.Errors)
+}
+
+func TestError_JoinedWithDriverErrorAnswers400WithSentinelOnly(t *testing.T) {
+	err := errors.Join(supplyDomain.ErrInvalidSupplyName, pgLike)
+	status, body := Error(err)
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Equal(t, http.StatusBadRequest, body.StatusCode)
+	assert.Empty(t, body.Error)
+	assert.Equal(t, []string{supplyDomain.ErrInvalidSupplyName.Error()}, body.Errors)
+	assert.NotContains(t, fmt.Sprint(body), "pq:")
+}
+
+func TestError_JoinedDriverErrorOnlyAnswers500(t *testing.T) {
+	status, body := Error(errors.Join(pgLike, errors.New("other")))
+	assert.Equal(t, http.StatusInternalServerError, status)
+	assert.Equal(t, "internal server error", body.Error)
+	assert.NotContains(t, fmt.Sprint(body), "pq:")
+}
+
+func TestError_ValidationWrappingDriverTextKeepsOnlySentinelMessage(t *testing.T) {
+	status, body := Error(fmt.Errorf("%w: %v", supplyDomain.ErrInvalidSupplyName, pgLike))
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Equal(t, []string{supplyDomain.ErrInvalidSupplyName.Error()}, body.Errors)
+	assert.NotContains(t, fmt.Sprint(body), "pq:")
+}
+
+func TestError_UnauthorizedWrappingDriverTextAnswers401WithSentinelOnly(t *testing.T) {
+	status, body := Error(fmt.Errorf("%w: %v", auth.ErrInvalidCredentials, pgLike))
+	assert.Equal(t, http.StatusUnauthorized, status)
+	assert.Equal(t, []string{auth.ErrInvalidCredentials.Error()}, body.Errors)
+	assert.NotContains(t, fmt.Sprint(body), "pq:")
+}
+
+func TestError_WorkPriceRegressionsStayBadRequest(t *testing.T) {
+	_, decErr := decimal.NewFromString("abc")
+
+	t.Run("non-numeric price answers 400 with the sentinel only", func(t *testing.T) {
+		status, body := Error(fmt.Errorf("%w: %w", workDomain.ErrInvalidWorkPriceValue, decErr))
+		assert.Equal(t, http.StatusBadRequest, status)
+		assert.Equal(t, []string{workDomain.ErrInvalidWorkPriceValue.Error()}, body.Errors)
+		assert.Empty(t, body.Error)
+		assert.NotContains(t, fmt.Sprint(body), "decimal")
+	})
+
+	t.Run("price not positive answers 400", func(t *testing.T) {
+		status, body := Error(workDomain.ErrWorkPriceLessThenOrEqualZero)
+		assert.Equal(t, http.StatusBadRequest, status)
+		assert.Equal(t, []string{workDomain.ErrWorkPriceLessThenOrEqualZero.Error()}, body.Errors)
+	})
+
+	t.Run("empty name joined with price keeps both messages", func(t *testing.T) {
+		status, body := Error(errors.Join(workDomain.ErrEmptyWorkName, workDomain.ErrWorkPriceLessThenOrEqualZero))
+		assert.Equal(t, http.StatusBadRequest, status)
+		assert.Equal(t, []string{
+			workDomain.ErrEmptyWorkName.Error(),
+			workDomain.ErrWorkPriceLessThenOrEqualZero.Error(),
+		}, body.Errors)
+	})
 }

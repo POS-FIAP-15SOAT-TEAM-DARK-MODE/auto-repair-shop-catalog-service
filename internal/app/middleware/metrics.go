@@ -9,7 +9,7 @@ import (
 )
 
 // Metrics records request latency per method/route/status. The route label
-// uses c.FullPath() (the matched route template, e.g. "/v1/service-order/:id")
+// uses c.FullPath() (the matched route template, e.g. "/v1/supplies/:id")
 // rather than the raw path, so per-request IDs never blow up cardinality.
 func Metrics() gin.HandlerFunc {
 	return func(c *gin.Context) {

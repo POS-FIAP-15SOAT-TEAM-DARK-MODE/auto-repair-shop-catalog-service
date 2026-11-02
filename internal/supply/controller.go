@@ -8,6 +8,7 @@ import (
 	"github.com/POS-FIAP-15SOAT-TEAM-DARK-MODE/auto-repair-shop-catalog-service/internal/pkg/json"
 	"github.com/POS-FIAP-15SOAT-TEAM-DARK-MODE/auto-repair-shop-catalog-service/internal/pkg/logger"
 	"github.com/POS-FIAP-15SOAT-TEAM-DARK-MODE/auto-repair-shop-catalog-service/internal/supply/adapters"
+	"github.com/POS-FIAP-15SOAT-TEAM-DARK-MODE/auto-repair-shop-catalog-service/internal/supply/domain"
 	"github.com/POS-FIAP-15SOAT-TEAM-DARK-MODE/auto-repair-shop-catalog-service/internal/supply/interfaces"
 	"go.uber.org/zap"
 )
@@ -68,8 +69,15 @@ func (ctrl *supplyController) List(ctx context.Context, req *http.Request) (adap
 		}
 	}
 
+	version := params.Get(versionParam)
+	if version != "" {
+		if v, err := strconv.Atoi(version); err != nil || v < 0 {
+			return adapters.PaginatedSupplyResponse{}, domain.ErrInvalidSupplyVersion
+		}
+	}
+
 	result, err := ctrl.svc.List(ctx, adapters.ListSuppliesParams{
-		Version:  params.Get(versionParam),
+		Version:  version,
 		Page:     pg,
 		PageSize: pgSize,
 	})
