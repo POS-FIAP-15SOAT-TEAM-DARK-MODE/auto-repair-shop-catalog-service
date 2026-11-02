@@ -75,6 +75,11 @@ make coverage                 # coverage gate used by CI (>= 80%, generated mock
 make test-integration         # needs PostgreSQL with migrations applied and MiniStack on :4566
 ```
 
+Measured on 2026-11-01 with `make coverage`'s method (`-coverpkg` over every package,
+`/mocks/` excluded): **90.6%** of statements, gate 80%. All 27 test packages pass with
+`LOG_LEVEL=PANIC go test ./... --race`. The coverage number is not hand-maintained: rerun
+`make coverage` and update this line when it changes.
+
 Integration tests (`internal/integration`, build tag `integration`) run the real
 HTTP API and consumer against PostgreSQL and MiniStack.
 
