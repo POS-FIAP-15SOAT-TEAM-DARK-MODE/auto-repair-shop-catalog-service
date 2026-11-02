@@ -51,7 +51,7 @@ Two shapes, both always carry `code` (the HTTP status):
 | 403 | Forbidden (role not allowed) |
 | 404 | Not found |
 | 409 | Conflict (version conflict, already reserved, insufficient stock) |
-| 422 | Business rule violation (out of stock, quantity ≤ 0) |
+| 422 | Business rule violation (reservation quantity ≤ 0) |
 | 500 | Unexpected error |
 
 ## Swagger
