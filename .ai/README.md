@@ -8,13 +8,13 @@ Single source of truth for all AI agent rules in this project.
 ```
 .ai/
   rules/               # topic-scoped rule files — open on demand
-    architecture.md        layered arch, UoW, DI root, repository context pattern
-    domain.md              ubiquitous language, status lifecycle, RBAC, business rules
-    go-conventions.md      Go idioms, decimal, UUID/ULID, no framework leakage, Mockery
-    database.md            PostgreSQL conventions, migrations, indexes, FK
+    architecture.md        layers, controller/service/repository, DI root, UoW, QueryBuilder
+    domain.md              ubiquitous language, validation, stock reservation rules, RBAC
+    go-conventions.md      Go idioms, decimal, UUID/ULID, no framework leakage, Mockery, config keys
+    database.md            PostgreSQL conventions, schema, migrations, indexes, FK
     api.md                 endpoint reference, error format, Swagger
-    testing.md             coverage thresholds, unit/integration patterns
-    security.md            JWT, RBAC enforcement, bcrypt, PII protection
+    testing.md             coverage gate, unit/integration patterns
+    security.md            JWT, RBAC enforcement, internal token, secrets, PII
     observability.md       Zap, log levels, event names, redaction
     workflow.md            Conventional Commits, pre-commit hooks, dev commands
   commands/            # reusable playbooks (also Claude Code slash commands via symlinks)
@@ -29,12 +29,12 @@ Single source of truth for all AI agent rules in this project.
 | Topic | File | Key contents |
 |---|---|---|
 | Architecture | `rules/architecture.md` | Layer diagram, layer contracts, DI root, UoW, QueryBuilder |
-| Domain & Business Rules | `rules/domain.md` | Ubiquitous language, status lifecycle, RBAC, budget, stock |
-| Go Conventions | `rules/go-conventions.md` | Tech stack, UUID/ULID, decimal, no framework leakage, Mockery |
-| Database | `rules/database.md` | NUMERIC(10,2), migrations, indexes, FK constraints |
+| Domain & Business Rules | `rules/domain.md` | Ubiquitous language, validation, stock reservation, RBAC |
+| Go Conventions | `rules/go-conventions.md` | Tech stack, UUID/ULID, decimal, no framework leakage, Mockery, config |
+| Database | `rules/database.md` | NUMERIC(10,2), schema, migrations, indexes, FK |
 | API | `rules/api.md` | Endpoints with roles, error format, Swagger |
-| Testing | `rules/testing.md` | 90%/80% coverage, unit vs integration patterns |
-| Security | `rules/security.md` | JWT, RBAC, bcrypt, PII rules |
+| Testing | `rules/testing.md` | 80% CI coverage gate, unit vs integration patterns |
+| Security | `rules/security.md` | JWT, RBAC, internal token, secrets, PII rules |
 | Observability | `rules/observability.md` | Zap, log levels, event names, redaction |
 | Workflow | `rules/workflow.md` | Conventional Commits, pre-commit, dev commands |
 

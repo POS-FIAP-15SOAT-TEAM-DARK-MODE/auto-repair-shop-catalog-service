@@ -14,11 +14,11 @@ touch migrations/<NNNNNN>_<description>.down.sql
 ## 3. Write `up.sql`
 Rules:
 - `NUMERIC(10,2)` for monetary columns — never `FLOAT`.
-- `UUID` for most IDs; use ULID pattern only for service order tables.
-- `TIMESTAMPTZ DEFAULT NOW()` for timestamps.
+- `VARCHAR(36)` for UUID ids; `VARCHAR(26)` for ULID service order ids.
+- `TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP` for timestamps.
 - Add `CHECK` constraints for status/enum columns (list all valid values).
-- Add all required foreign key constraints.
-- Add indexes on: CPF, CNPJ, email, status, FK columns, and any column used in filters.
+- Add all required foreign key constraints (only inside the catalog database).
+- Add indexes on FK columns and on any column used in filters (for example `status`, `version`).
 
 ## 4. Write `down.sql`
 - Must fully reverse the `up.sql`.
@@ -27,7 +27,7 @@ Rules:
 ## 5. Apply and Verify
 ```bash
 make migrate-up
-make migrate-status
+make migrate-down   # check the down file on a scratch database
 ```
 
 ## Never
