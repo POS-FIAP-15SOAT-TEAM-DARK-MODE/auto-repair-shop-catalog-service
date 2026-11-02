@@ -103,11 +103,11 @@ func (svc *supplyService) List(ctx context.Context, params adapters.ListSupplies
 	})
 
 	eg.Go(func() error {
-		vehicles, err := svc.repo.Search(groupCtx, params)
+		supplies, err := svc.repo.Search(groupCtx, params)
 		if err != nil {
 			return err
 		}
-		items = vehicles
+		items = supplies
 		return nil
 	})
 
