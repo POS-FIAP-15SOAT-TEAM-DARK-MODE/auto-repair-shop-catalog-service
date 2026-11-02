@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // ErrInvalidEnvelope is returned when a message body is not a valid envelope (messaging.md).
@@ -21,6 +22,25 @@ type Envelope struct {
 	ServiceOrderID string          `json:"service_order_id"`
 	RequestID      string          `json:"request_id"`
 	Payload        json.RawMessage `json:"payload"`
+}
+
+// LogFields returns the correlation fields of the envelope for the logger.
+// Empty identifiers are omitted so each log line only carries what the message has.
+func (e Envelope) LogFields() []zap.Field {
+	fields := []zap.Field{
+		zap.String("message_id", e.MessageID),
+		zap.String("message_type", e.Type),
+	}
+	if e.SagaID != "" {
+		fields = append(fields, zap.String("saga_id", e.SagaID))
+	}
+	if e.ServiceOrderID != "" {
+		fields = append(fields, zap.String("service_order_id", e.ServiceOrderID))
+	}
+	if e.RequestID != "" {
+		fields = append(fields, zap.String("request_id", e.RequestID))
+	}
+	return fields
 }
 
 // Decode parses and validates a message body. message_id must be a UUID because
