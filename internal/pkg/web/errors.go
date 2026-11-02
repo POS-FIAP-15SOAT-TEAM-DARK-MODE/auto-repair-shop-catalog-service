@@ -31,6 +31,8 @@ var (
 		workDomain.ErrWorkDescriptionShorterThenRequired,
 		workDomain.ErrInvalidWorkId,
 		workDomain.ErrInvalidWorkStatusValue,
+		workDomain.ErrWorkPriceLessThenOrEqualZero,
+		workDomain.ErrInvalidWorkPriceValue,
 		supplyDomain.ErrInvalidSupplyID,
 		supplyDomain.ErrInvalidSupplyId,
 		supplyDomain.ErrInvalidSupplyName,
@@ -58,8 +60,6 @@ var (
 		reservationDomain.ErrInsufficientStock,
 	}
 	domainUnprocessableErrors = []error{
-		workDomain.ErrWorkPriceLessThenOrEqualZero,
-		workDomain.ErrInvalidWorkPriceValue,
 		supplyDomain.ErrSupplyOutOfStock,
 		reservationDomain.ErrInvalidReservationQuantity,
 	}
@@ -103,11 +103,9 @@ func IsInfrastructureError(err error) bool {
 }
 
 // getHTTPStatus determines the HTTP status code for a given error.
-// An error answers 4xx only when every one of its causes is a known sentinel.
+// Any validation sentinel among its causes makes it a 400, whatever else it joins.
 func getHTTPStatus(err error) int {
 	switch {
-	case hasUnknownCause(err):
-		return http.StatusInternalServerError
 	case isUnauthorizedError(err):
 		return http.StatusUnauthorized
 	case isValidationError(err):
@@ -202,34 +200,6 @@ func causes(err error) []error {
 		}
 	}
 	return []error{err}
-}
-
-// hasUnknownCause reports whether any cause of err is neither a known sentinel nor
-// a known infrastructure error. Such errors answer 500 generically, even when they
-// are joined with a validation error.
-func hasUnknownCause(err error) bool {
-	for _, cause := range causes(err) {
-		if !matchesAny(cause, knownErrors()) {
-			return true
-		}
-	}
-	return false
-}
-
-func knownErrors() []error {
-	var all []error
-	for _, group := range [][]error{
-		unauthorizedErrors,
-		validationErrors,
-		notFoundErrors,
-		domainConflictErrors,
-		domainUnprocessableErrors,
-		infrastructureErrors,
-		serializationErrors,
-	} {
-		all = append(all, group...)
-	}
-	return all
 }
 
 func matchesAny(err error, sentinels []error) bool {

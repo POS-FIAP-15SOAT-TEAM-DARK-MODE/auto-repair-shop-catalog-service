@@ -12,6 +12,7 @@ import (
 	reservationDomain "github.com/POS-FIAP-15SOAT-TEAM-DARK-MODE/auto-repair-shop-catalog-service/internal/reservation/domain"
 	supplyDomain "github.com/POS-FIAP-15SOAT-TEAM-DARK-MODE/auto-repair-shop-catalog-service/internal/supply/domain"
 	workDomain "github.com/POS-FIAP-15SOAT-TEAM-DARK-MODE/auto-repair-shop-catalog-service/internal/work/domain"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -133,13 +134,13 @@ func TestError_JoinedValidationSentinelsAnswer400WithTheirMessages(t *testing.T)
 	}, body.Errors)
 }
 
-func TestError_JoinedWithDriverErrorAnswers500(t *testing.T) {
+func TestError_JoinedWithDriverErrorAnswers400WithSentinelOnly(t *testing.T) {
 	err := errors.Join(supplyDomain.ErrInvalidSupplyName, pgLike)
 	status, body := Error(err)
-	assert.Equal(t, http.StatusInternalServerError, status)
-	assert.Equal(t, http.StatusInternalServerError, body.StatusCode)
-	assert.Equal(t, "internal server error", body.Error)
-	assert.Empty(t, body.Errors)
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Equal(t, http.StatusBadRequest, body.StatusCode)
+	assert.Empty(t, body.Error)
+	assert.Equal(t, []string{supplyDomain.ErrInvalidSupplyName.Error()}, body.Errors)
 	assert.NotContains(t, fmt.Sprint(body), "pq:")
 }
 
@@ -162,4 +163,31 @@ func TestError_UnauthorizedWrappingDriverTextAnswers401WithSentinelOnly(t *testi
 	assert.Equal(t, http.StatusUnauthorized, status)
 	assert.Equal(t, []string{auth.ErrInvalidCredentials.Error()}, body.Errors)
 	assert.NotContains(t, fmt.Sprint(body), "pq:")
+}
+
+func TestError_WorkPriceRegressionsStayBadRequest(t *testing.T) {
+	_, decErr := decimal.NewFromString("abc")
+
+	t.Run("non-numeric price answers 400 with the sentinel only", func(t *testing.T) {
+		status, body := Error(fmt.Errorf("%w: %w", workDomain.ErrInvalidWorkPriceValue, decErr))
+		assert.Equal(t, http.StatusBadRequest, status)
+		assert.Equal(t, []string{workDomain.ErrInvalidWorkPriceValue.Error()}, body.Errors)
+		assert.Empty(t, body.Error)
+		assert.NotContains(t, fmt.Sprint(body), "decimal")
+	})
+
+	t.Run("price not positive answers 400", func(t *testing.T) {
+		status, body := Error(workDomain.ErrWorkPriceLessThenOrEqualZero)
+		assert.Equal(t, http.StatusBadRequest, status)
+		assert.Equal(t, []string{workDomain.ErrWorkPriceLessThenOrEqualZero.Error()}, body.Errors)
+	})
+
+	t.Run("empty name joined with price keeps both messages", func(t *testing.T) {
+		status, body := Error(errors.Join(workDomain.ErrEmptyWorkName, workDomain.ErrWorkPriceLessThenOrEqualZero))
+		assert.Equal(t, http.StatusBadRequest, status)
+		assert.Equal(t, []string{
+			workDomain.ErrEmptyWorkName.Error(),
+			workDomain.ErrWorkPriceLessThenOrEqualZero.Error(),
+		}, body.Errors)
+	})
 }
