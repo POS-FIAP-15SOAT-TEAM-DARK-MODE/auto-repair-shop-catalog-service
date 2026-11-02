@@ -73,8 +73,7 @@ func GinOnlyErrorHandler(cb func(context.Context, *http2.Request) error, customS
 		}
 
 		if err := cb(ctx, c.Request); err != nil {
-			status, errResp := web.Error(err)
-			c.JSON(status, errResp)
+			respondError(c, err)
 			return
 		}
 
@@ -100,8 +99,7 @@ func GinHandler[T any](cb func(context.Context, *http2.Request) (T, error), cust
 
 		resp, err := cb(ctx, c.Request)
 		if err != nil {
-			status, errResp := web.Error(err)
-			c.JSON(status, errResp)
+			respondError(c, err)
 			return
 		}
 
@@ -112,4 +110,14 @@ func GinHandler[T any](cb func(context.Context, *http2.Request) (T, error), cust
 
 		c.JSON(customStatus[0], resp)
 	}
+}
+
+// respondError writes the public error body and logs the full cause server-side
+// (5xx and infrastructure 409/422) with the request_id carried by the request context.
+func respondError(c *gin.Context, err error) {
+	status, errResp := web.Error(err)
+	if status >= http2.StatusInternalServerError || web.IsInfrastructureError(err) {
+		logger.Of(c.Request.Context()).Error(err, zap.Int("status", status))
+	}
+	c.JSON(status, errResp)
 }
