@@ -150,6 +150,12 @@ func isBadRequestError(err error) bool {
 		errors.Is(err, workDomain.ErrInvalidWorkId) ||
 		errors.Is(err, workDomain.ErrInvalidWorkStatusValue) ||
 		errors.Is(err, supplyDomain.ErrInvalidSupplyID) ||
+		errors.Is(err, supplyDomain.ErrInvalidSupplyId) ||
+		errors.Is(err, supplyDomain.ErrInvalidSupplyName) ||
+		errors.Is(err, supplyDomain.ErrInvalidSupplyDescription) ||
+		errors.Is(err, supplyDomain.ErrInvalidSupplyUnitPrice) ||
+		errors.Is(err, supplyDomain.ErrInvalidSupplyStockQuantity) ||
+		errors.Is(err, supplyDomain.ErrInvalidSupplyVersion) ||
 		errors.Is(err, supplyDomain.ErrSupplyVersionRequired) ||
 		errors.Is(err, supplyDomain.ErrInvalidSupplyAmount) ||
 		errors.Is(err, reservationDomain.ErrInvalidServiceOrderID) ||
