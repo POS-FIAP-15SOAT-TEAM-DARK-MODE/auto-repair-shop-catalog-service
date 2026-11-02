@@ -170,6 +170,12 @@ func TestList(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
+			name:           "non_numeric_version_is_a_bad_request",
+			query:          "?version=abc",
+			mockSetup:      func(*mocks.SupplyService) {},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
 			name:  "success_returns_empty_list",
 			query: "?page=1&pageSize=10",
 			mockSetup: func(svc *mocks.SupplyService) {

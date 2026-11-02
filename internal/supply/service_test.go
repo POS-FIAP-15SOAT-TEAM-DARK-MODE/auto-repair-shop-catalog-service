@@ -946,3 +946,21 @@ func TestSupplyService_IncrementStockQuantity(t *testing.T) {
 		})
 	}
 }
+
+func TestService_List_TotalPagesRoundsUp(t *testing.T) {
+	exec := uowMocks.NewExecutor(t)
+	repo := mocks.NewSupplyRepository(t)
+
+	repo.EXPECT().Count(mock.Anything, mock.Anything).Return(int64(25), nil)
+	repo.EXPECT().Search(mock.Anything, mock.Anything).Return([]domain.Supply{}, nil)
+
+	appService := supply.NewService(exec, repo, id.NewNoopIDGenerator("1"))
+
+	got, err := appService.List(context.Background(), adapters.ListSuppliesParams{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if got.TotalPages != 3 {
+		t.Fatalf("25 items with page size 10 must be 3 pages, got %d", got.TotalPages)
+	}
+}
