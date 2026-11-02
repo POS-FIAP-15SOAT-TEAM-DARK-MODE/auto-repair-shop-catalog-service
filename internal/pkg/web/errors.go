@@ -12,6 +12,39 @@ import (
 	workDomain "github.com/POS-FIAP-15SOAT-TEAM-DARK-MODE/auto-repair-shop-catalog-service/internal/work/domain"
 )
 
+const (
+	msgInternalServerError = "internal server error"
+	msgConflict            = "conflict"
+	msgInvalidData         = "invalid data"
+)
+
+// Domain sentinels per client-facing status. Their messages are safe to expose.
+var (
+	notFoundErrors = []error{
+		workDomain.ErrWorkNotFound,
+		supplyDomain.ErrSupplyNotFound,
+		reservationDomain.ErrReservationNotFound,
+	}
+	domainConflictErrors = []error{
+		reservationDomain.ErrReservationAlreadyExists,
+		supplyDomain.ErrSupplyVersionConflict,
+		reservationDomain.ErrInsufficientStock,
+	}
+	domainUnprocessableErrors = []error{
+		workDomain.ErrWorkPriceLessThenOrEqualZero,
+		workDomain.ErrInvalidWorkPriceValue,
+		supplyDomain.ErrSupplyOutOfStock,
+		reservationDomain.ErrInvalidReservationQuantity,
+	}
+	// infrastructureErrors come from the persistence layer. Their messages are
+	// generic on purpose: the real cause is only logged.
+	infrastructureErrors = []error{
+		app.ErrDataConflict,
+		app.ErrInfraConflict,
+		app.ErrDataViolation,
+	}
+)
+
 type errorResponse struct {
 	StatusCode int      `json:"code"`
 	Errors     []string `json:"errors,omitempty"`
@@ -28,6 +61,12 @@ func Error(err error) (int, errorResponse) {
 		Errors:     stackedErrors,
 		Error:      errorMsg,
 	}
+}
+
+// IsInfrastructureError reports whether err stems from persistence/infrastructure.
+// Such errors must be logged in full and never reach the response body.
+func IsInfrastructureError(err error) bool {
+	return matchesAny(err, infrastructureErrors)
 }
 
 // getHTTPStatus determines the HTTP status code for a given error.
@@ -60,28 +99,47 @@ func IsJoined(err error) bool {
 }
 
 // buildErrorMessages formats the error messages based on status code.
+// Infrastructure causes never leave the server: 5xx and infra 409/422 get generic messages.
 func buildErrorMessages(err error, status int) ([]string, string) {
 	switch status {
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusBadRequest:
 		// For 4XX BadRequest provide stack of errors.
 		return unwrapAll(err), ""
 	case http.StatusNotFound:
-		return nil, err.Error()
-	case http.StatusConflict, http.StatusUnprocessableEntity, http.StatusInternalServerError:
-		// For 409/422 and 5XX unwrap recursively and return the innermost (root cause) error message.
-		root := err
-		for {
-			unwrapped := errors.Unwrap(root)
-			if unwrapped == nil {
-				break
-			}
-			root = unwrapped
+		return nil, domainMessage(err, notFoundErrors)
+	case http.StatusConflict:
+		if IsInfrastructureError(err) {
+			return nil, msgConflict
 		}
-		return nil, root.Error()
+		return nil, domainMessage(err, domainConflictErrors)
+	case http.StatusUnprocessableEntity:
+		if IsInfrastructureError(err) {
+			return nil, msgInvalidData
+		}
+		return nil, domainMessage(err, domainUnprocessableErrors)
 	default:
-		// For any other case, generic error message.
-		return nil, "Internal Server Error"
+		return nil, msgInternalServerError
 	}
+}
+
+// domainMessage returns the message of the domain sentinel matched by err.
+// Wrapping context and infrastructure causes are never included.
+func domainMessage(err error, sentinels []error) string {
+	for _, s := range sentinels {
+		if errors.Is(err, s) {
+			return s.Error()
+		}
+	}
+	return msgInternalServerError
+}
+
+func matchesAny(err error, sentinels []error) bool {
+	for _, s := range sentinels {
+		if errors.Is(err, s) {
+			return true
+		}
+	}
+	return false
 }
 
 func isBadRequestError(err error) bool {
@@ -103,9 +161,7 @@ func isBadRequestError(err error) bool {
 }
 
 func isNotFoundError(err error) bool {
-	return errors.Is(err, workDomain.ErrWorkNotFound) ||
-		errors.Is(err, supplyDomain.ErrSupplyNotFound) ||
-		errors.Is(err, reservationDomain.ErrReservationNotFound)
+	return matchesAny(err, notFoundErrors)
 }
 
 func isUnauthorizedError(err error) bool {
@@ -121,17 +177,12 @@ func isInternalServerError(err error) bool {
 func isConflictError(err error) bool {
 	return errors.Is(err, app.ErrDataConflict) ||
 		errors.Is(err, app.ErrInfraConflict) ||
-		errors.Is(err, reservationDomain.ErrReservationAlreadyExists) ||
-		errors.Is(err, supplyDomain.ErrSupplyVersionConflict) ||
-		errors.Is(err, reservationDomain.ErrInsufficientStock)
+		matchesAny(err, domainConflictErrors)
 }
 
 func isUnprocessableEntityError(err error) bool {
 	return errors.Is(err, app.ErrDataViolation) ||
-		errors.Is(err, workDomain.ErrWorkPriceLessThenOrEqualZero) ||
-		errors.Is(err, workDomain.ErrInvalidWorkPriceValue) ||
-		errors.Is(err, supplyDomain.ErrSupplyOutOfStock) ||
-		errors.Is(err, reservationDomain.ErrInvalidReservationQuantity)
+		matchesAny(err, domainUnprocessableErrors)
 }
 
 func unwrapAll(err error) []string {
