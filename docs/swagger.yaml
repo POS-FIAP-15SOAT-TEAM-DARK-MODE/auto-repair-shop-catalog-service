@@ -1,0 +1,721 @@
+openapi: 3.0.0
+info:
+  title: Auto Repair Shop - Catalog Service
+  version: 1.0.0
+  description: >-
+    Works (billable services), supplies (parts with stock) and the stock reservations taken by the
+    Service Order saga. The `/v1` routes are public (JWT, role-based). The `/internal` routes are
+    service-to-service only (`X-Internal-Token`) and are never routed by the API gateway.
+servers:
+- url: http://localhost:8082
+  description: Local development server
+tags:
+- name: Work
+  description: Billable services (public)
+- name: Supply
+  description: Parts with stock (public)
+- name: Internal
+  description: Service-to-service endpoints (never routed by the gateway)
+- name: Operational
+  description: Health and metrics
+security:
+- BearerAuth: []
+paths:
+  /v1/works:
+    get:
+      summary: List works
+      description: Paginated list of works with an optional status filter. Roles - ATTENDANT, MECHANIC, ADMIN.
+      tags:
+      - Work
+      security:
+      - BearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - in: query
+        name: status
+        required: false
+        schema:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+        description: Only works with this status. Any other value is ignored.
+      responses:
+        '200':
+          description: Page of works
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListWorksResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Create a work
+      description: Creates a billable service. Roles - ATTENDANT, ADMIN.
+      tags:
+      - Work
+      security:
+      - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkRequest'
+      responses:
+        '201':
+          description: Work created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/works/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    put:
+      summary: Update a work
+      description: Replaces name, description, price and status of a work. Roles - ATTENDANT, ADMIN.
+      tags:
+      - Work
+      security:
+      - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkRequest'
+      responses:
+        '200':
+          description: Work updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      summary: Delete a work
+      description: Deletes a work by id. Roles - ATTENDANT, ADMIN.
+      tags:
+      - Work
+      security:
+      - BearerAuth: []
+      responses:
+        '204':
+          description: Work deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/supplies:
+    get:
+      summary: List supplies
+      description: Paginated list of supplies, optionally filtered by version. Roles - ATTENDANT, MECHANIC, ADMIN.
+      tags:
+      - Supply
+      security:
+      - BearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - in: query
+        name: version
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+        description: Only supplies at this version.
+      responses:
+        '200':
+          description: Page of supplies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSuppliesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Create a supply
+      description: Creates a supply with stock. Roles - ATTENDANT, MECHANIC, ADMIN.
+      tags:
+      - Supply
+      security:
+      - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplyRequest'
+      responses:
+        '201':
+          description: Supply created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplyResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/supplies/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    put:
+      summary: Update a supply (optimistic lock)
+      description: >-
+        Updates a supply. The body must carry the `version` the client read (returned by `GET /v1/supplies`).
+        The write applies only if the stored version is still that one; otherwise nothing is written and the
+        response is `409`. The response carries the new version. Roles - ATTENDANT, MECHANIC, ADMIN.
+      tags:
+      - Supply
+      security:
+      - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplyUpdateRequest'
+      responses:
+        '200':
+          description: Supply updated; `version` is the new version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplyResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      summary: Delete a supply
+      description: Deletes a supply by id. Roles - ATTENDANT, MECHANIC, ADMIN.
+      tags:
+      - Supply
+      security:
+      - BearerAuth: []
+      responses:
+        '204':
+          description: Supply deleted
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /internal/works/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      summary: Get a work for the Service Order service
+      description: Returns the work snapshot used by the Service Order service. Requires `X-Internal-Token`.
+      tags:
+      - Internal
+      security:
+      - InternalToken: []
+      responses:
+        '200':
+          description: Work found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalWorkResponse'
+        '401':
+          $ref: '#/components/responses/InternalUnauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /internal/reservations:
+    post:
+      summary: Reserve stock for a service order
+      description: >-
+        Holds `quantity` units of a supply for a service order and decrements its stock in the same
+        transaction. Requires `X-Internal-Token`. See ADR 0002.
+      tags:
+      - Internal
+      security:
+      - InternalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReserveRequest'
+      responses:
+        '201':
+          description: Reservation created (or reactivated)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReserveResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/InternalUnauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Insufficient stock, or the supply is already reserved for this service order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /internal/reservations/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    delete:
+      summary: Release a reservation
+      description: Returns the reserved units to stock. Idempotent - releasing an already released reservation returns `204`. Requires `X-Internal-Token`.
+      tags:
+      - Internal
+      security:
+      - InternalToken: []
+      responses:
+        '204':
+          description: Reservation released (or already released)
+        '401':
+          $ref: '#/components/responses/InternalUnauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /ping:
+    get:
+      summary: Liveness check
+      tags:
+      - Operational
+      security: []
+      responses:
+        '200':
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: pong
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      tags:
+      - Operational
+      security: []
+      responses:
+        '200':
+          description: Metrics in the Prometheus text format
+          content:
+            text/plain:
+              schema:
+                type: string
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT (HS256) with `user_id` and `roles` claims.
+    InternalToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
+      description: Shared secret between services (`INTERNAL_TOKEN`).
+  parameters:
+    Id:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+      description: Resource id (UUID).
+    Page:
+      in: query
+      name: page
+      required: false
+      schema:
+        type: integer
+        format: int64
+        default: 1
+        minimum: 1
+      description: Page number (1-based). Invalid values fall back to 1.
+    PageSize:
+      in: query
+      name: pageSize
+      required: false
+      schema:
+        type: integer
+        format: int64
+        default: 10
+        minimum: 1
+      description: Items per page. Invalid values fall back to 10.
+  responses:
+    ValidationError:
+      description: Validation failed; `errors` lists the messages
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrorResponse'
+          example:
+            code: 400
+            errors:
+            - work name should have at least 3 letters
+    Unauthorized:
+      description: Missing, malformed, invalid or expired JWT
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 401
+            error: Unauthorized
+    InternalUnauthorized:
+      description: Missing or wrong `X-Internal-Token`
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 401
+            error: unauthorized
+    Forbidden:
+      description: The token has no role allowed for this route
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 403
+            error: Forbidden
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 404
+            error: supply not found
+    Conflict:
+      description: Optimistic-lock conflict; reload the supply and try again
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 409
+            error: supply was modified by someone else; reload and try again
+    UnprocessableEntity:
+      description: Business rule violation (for example quantity ≤ 0 or out of stock)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 422
+            error: reservation quantity must be greater than zero
+    InternalError:
+      description: Unexpected error (details are logged, never returned)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 500
+            error: internal server error
+  schemas:
+    ErrorResponse:
+      type: object
+      description: Error body with a single message. Used for 401, 403, 404, 409, 422 and 500.
+      required:
+      - code
+      - error
+      properties:
+        code:
+          type: integer
+          description: HTTP status code
+          example: 404
+        error:
+          type: string
+          description: Human-readable message (generic for infrastructure failures)
+    ValidationErrorResponse:
+      type: object
+      description: Body of a 400 response. The `errors` list has one message per failed rule.
+      required:
+      - code
+      - errors
+      properties:
+        code:
+          type: integer
+          example: 400
+        errors:
+          type: array
+          items:
+            type: string
+    WorkRequest:
+      type: object
+      required:
+      - name
+      - description
+      - price
+      - status
+      properties:
+        name:
+          type: string
+          minLength: 3
+          example: Alinhamento
+        description:
+          type: string
+          minLength: 10
+          example: Alinhamento completo das rodas do veículo
+        price:
+          type: string
+          description: Unit price as a decimal string, greater than 0
+          example: '199.00'
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+          example: ACTIVE
+    WorkResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 272e933f-273e-4ef7-a38d-2ab1dd8c234c
+        name:
+          type: string
+          example: Alinhamento
+        description:
+          type: string
+          example: Alinhamento completo das rodas do veículo
+        price:
+          type: string
+          example: '199.00'
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+    ListWorksResponse:
+      type: object
+      required:
+      - items
+      - totalItems
+      - totalPages
+      - pageSize
+      - page
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkResponse'
+        totalItems:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int64
+        pageSize:
+          type: integer
+          format: int64
+        page:
+          type: integer
+          format: int64
+    InternalWorkResponse:
+      type: object
+      description: Work snapshot read by the Service Order service.
+      required:
+      - id
+      - name
+      - description
+      - unit_price
+      - active
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        unit_price:
+          type: string
+          description: Decimal string with two places
+          example: '150.00'
+        active:
+          type: boolean
+          description: False for INACTIVE works; the caller rejects them
+    SupplyRequest:
+      type: object
+      required:
+      - name
+      - description
+      - unitPrice
+      - stockQuantity
+      properties:
+        name:
+          type: string
+          minLength: 3
+          example: Filtro de óleo
+        description:
+          type: string
+          minLength: 10
+          example: Filtro de óleo do motor
+        unitPrice:
+          type: string
+          description: Unit price as a decimal string, greater than 0
+          example: '35.50'
+        stockQuantity:
+          type: integer
+          minimum: 0
+          example: 10
+    SupplyUpdateRequest:
+      allOf:
+      - $ref: '#/components/schemas/SupplyRequest'
+      - type: object
+        required:
+        - version
+        properties:
+          version:
+            type: integer
+            minimum: 1
+            description: The version the client read. Must still be the stored version.
+            example: 3
+    SupplyResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        unit_price:
+          type: string
+          example: '35.50'
+        stock_quantity:
+          type: integer
+          example: 10
+        version:
+          type: integer
+          example: 3
+    ListSuppliesResponse:
+      type: object
+      required:
+      - items
+      - totalItems
+      - totalPages
+      - pageSize
+      - page
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupplyResponse'
+        totalItems:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int64
+        pageSize:
+          type: integer
+          format: int64
+        page:
+          type: integer
+          format: int64
+    ReserveRequest:
+      type: object
+      required:
+      - service_order_id
+      - supply_id
+      - quantity
+      properties:
+        service_order_id:
+          type: string
+          description: ULID of the service order (26 characters)
+          example: 01JD8Z4R3Q8M2V7K5N9XWABCDE
+        supply_id:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          description: Units to reserve; must be greater than 0 (422 otherwise)
+          example: 2
+    ReserveResponse:
+      type: object
+      properties:
+        reservation_id:
+          type: string
+          format: uuid
+        supply_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Filtro de óleo
+        description:
+          type: string
+        unit_price:
+          type: string
+          example: '35.50'
+        version:
+          type: integer
+          description: The supply version after the stock decrement
+          example: 3

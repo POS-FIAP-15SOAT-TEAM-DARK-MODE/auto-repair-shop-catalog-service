@@ -1,0 +1,14 @@
+# <type>(<scope>): <short description>
+# |<---- max 72 characters ---->|
+#
+# Types: feat | fix | refactor | test | chore | docs | perf | style | revert
+#
+# Scopes: catalog | work | supply | reservation | messaging | auth | web |
+#         middleware | routing | api | db | infra | k8s | integration | ci | deps
+#
+# --- Examples ---
+# feat(reservation): reject reserve when stock is insufficient
+# fix(supply): keep version conflict as 409 on concurrent updates
+# refactor(auth): extract JWT claims parsing to helper
+# test(work): add edge cases for inactive work lookup
+# chore(infra): update docker-compose postgres version
